@@ -1,7 +1,8 @@
-all: grammar
+all:
 	ghc --make Main.hs -o bifrost
 
-grammar: cleangrammar
+grammar:
+	-rm -rf Lang
 	bnfc --haskell -p Lang Lang.cf
 	happy -gca Lang/ParLang.y
 	alex -g Lang/LexLang.x
@@ -12,11 +13,9 @@ $(VERBOSE).SILENT:
 #testgrammar: grammar
 #	runhaskell Lang/TestLang.hs < test/newtest.prog
 
-cleangrammar:
-	-rm -rf Lang
-
-clean: cleangrammar
+clean:
 	-rm -f *.hi *.o
+	-rm -f Lang/*.hi Lang/*.o Lang/*.x Lang/*.y
 
 distclean: clean
 	-rm -f bifrost
