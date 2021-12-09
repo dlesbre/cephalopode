@@ -1,0 +1,291 @@
+lettype expr = APPL expr expr
+	     | LAMBDA string expr
+	     | VAR string
+	     | INT int
+	     | PRIM_FUN int
+;
+
+load (DIR^"ops.fl");
+let lett name e1 e2 = APPL (LAMBDA name e2) e1;
+
+letrec Pexpr (APPL e1 e2) = sprintf "(%s %s)" (Pexpr e1) (Pexpr e2)
+ /\    Pexpr (LAMBDA s e) = sprintf "(\\%s. %s)" s (Pexpr e)
+ /\    Pexpr (VAR s) = s
+ /\    Pexpr (INT i) = sprintf "%d" i
+ /\    Pexpr (PRIM_FUN i) = primfn2s i
+;
+install_print_function Pexpr;
+
+
+// No longer used, "plus", "minus", etc do this now.
+//letrec introduce_trick (APPL (APPL (PRIM_FUN fn) a1) a2)
+//			assuming ((fn = PLUS) OR (fn = MINUS)) =
+//	APPL (introduce_trick a2) (APPL (introduce_trick a1) (PRIM_FUN fn))
+// /\    introduce_trick (APPL a1 a2) =
+//	APPL (introduce_trick a1) (introduce_trick a2)
+// /\    introduce_trick (LAMBDA s e) =
+//	LAMBDA s (introduce_trick e)
+// /\    introduce_trick other = other
+//;
+
+
+
+
+letrec not_used v (APPL e1 e2) = (not_used v e1) AND (not_used v e2)
+ /\    not_used v (LAMBDA x e) = (v = x) => T | not_used v e
+ /\    not_used v (VAR x) = x != v
+ /\    not_used v other = T
+;
+
+letrec abstract x (VAR v) assuming (v = x) = PRIM_FUN I
+ /\    abstract x e assuming (not_used x e) = APPL (PRIM_FUN K) e
+ /\    abstract x (APPL e1 e2) =
+	APPL (APPL (PRIM_FUN S) (abstract x e1)) (abstract x e2)
+;
+
+letrec raw_compile (APPL e1 e2) = APPL (raw_compile e1) (raw_compile e2)
+ /\    raw_compile (LAMBDA x e) = abstract x (raw_compile e)
+ /\    raw_compile other = other
+;
+
+
+let compile expr =
+    //let expr' = introduce_trick expr in
+    raw_compile expr
+;
+
+
+let draw expr =
+    let d = mktempd "compile" then
+    let file = sprintf "%s/expr.dot" d then
+    let fp = fopen file "w" then
+    //
+    (fprintf fp "digraph G {\n") fseq
+    (fprintf fp "node [shape=circle];\n") fseq
+    (fprintf fp "size = \"8.5,11.0\";\n") fseq
+    (fprintf fp "center = 1;\n") fseq
+    (fprintf fp "margin = 0.5;\n") fseq
+    (fprintf fp "ordering=out;\n") fseq
+    let nodes = ref [] in
+    let edges = ref [] in
+    letrec draw (APPL e1 e2) =
+	let n1 = draw e1 then
+	let n2 = draw e2 then
+	let id = length (deref nodes) + 1 then
+	let nd = sprintf "n%d [label = \"@\" ordering=out];" id then
+	let e1 = sprintf "n%d -> n%d [style=solid, color=blue];\n" id n1 then
+	let e2 = sprintf "n%d -> n%d [style=solid, color=red];\n" id n2 then
+	(nodes := (nd : (deref nodes))) fseq
+	(edges := (e1 : e2 : (deref edges))) fseq
+	id
+     /\   draw (LAMBDA s e) =
+	let n = draw e then
+	let id = length (deref nodes) + 1 then
+	let nd =
+	    sprintf "n%d [label = \"\\\\%s\" ordering=out];" id s
+	then
+	let e = sprintf "n%d -> n%d [style=solid, color=red];\n" id n then
+	(nodes := (nd : (deref nodes))) fseq
+	(edges := (e : (deref edges))) fseq
+	id
+     /\    draw (VAR n) =
+	let id = length (deref nodes) + 1 then
+	let nd = sprintf "n%d [label = \"%s\"];" id n then
+	(nodes := (nd : (deref nodes))) fseq
+	id
+     /\    draw (INT i) =
+	let id = length (deref nodes) + 1 then
+	let nd = sprintf "n%d [label = \"%d\"];" id i then
+	(nodes := (nd : (deref nodes))) fseq
+	id
+     /\    draw (PRIM_FUN fn) =
+	let id = length (deref nodes) + 1 then
+	let nd = sprintf "n%d [label = \"%s\"];" id (primfn2s fn) then
+	(nodes := (nd : (deref nodes))) fseq
+	id
+    in
+    let top = draw expr then
+    (list2fp fp T "" "\n" "" (\fp.\s. fprintf fp "%s" s) (rev (deref nodes)))
+    fseq
+    (list2fp fp T "" "\n" "" (\fp.\s. fprintf fp "%s" s) (deref edges))
+    fseq
+    (fprintf fp "}\n") fseq
+    (fclose fp) fseq
+    let cmd = sprintf "display_dot %s" file then
+    tcl_eval [cmd]
+;
+
+let debug_draw expr =
+    let d = mktempd "compile" then
+    let file = sprintf "%s/expr.dot" d then
+    let fp = fopen file "w" then
+    //
+    (fprintf fp "digraph G {\n") fseq
+    (fprintf fp "node [shape=circle];\n") fseq
+    (fprintf fp "size = \"8.5,11.0\";\n") fseq
+    (fprintf fp "center = 1;\n") fseq
+    (fprintf fp "margin = 0.5;\n") fseq
+    (fprintf fp "ordering=out;\n") fseq
+    let nodes = ref [] in
+    let edges = ref [] in
+    letrec draw (APPL e1 e2) =
+	let n1 = draw e1 then
+	let n2 = draw e2 then
+	let id = length (deref nodes) + 1 then
+	let nd = sprintf "n%d [label = \"0x%x: @\" ordering=out];" id id then
+	let e1 = sprintf "n%d -> n%d [style=solid, color=blue];\n" id n1 then
+	let e2 = sprintf "n%d -> n%d [style=solid, color=red];\n" id n2 then
+	(nodes := (nd : (deref nodes))) fseq
+	(edges := (e1 : e2 : (deref edges))) fseq
+	id
+     /\   draw (LAMBDA s e) =
+	let n = draw e then
+	let id = length (deref nodes) + 1 then
+	let nd =
+	    sprintf "n%d [label = \"0x%x: \\\\%s\" ordering=out];" id id s
+	then
+	let e = sprintf "n%d -> n%d [style=solid, color=red];\n" id n then
+	(nodes := (nd : (deref nodes))) fseq
+	(edges := (e : (deref edges))) fseq
+	id
+     /\    draw (VAR n) =
+	let id = length (deref nodes) + 1 then
+	let nd = sprintf "n%d [label = \"0x%x: %s\"];" id id n then
+	(nodes := (nd : (deref nodes))) fseq
+	id
+     /\    draw (INT i) =
+	let id = length (deref nodes) + 1 then
+	let nd = sprintf "n%d [label = \"0x%x: %d\"];" id id i then
+	(nodes := (nd : (deref nodes))) fseq
+	id
+     /\    draw (PRIM_FUN fn) =
+	let id = length (deref nodes) + 1 then
+	let nd = sprintf "n%d [label = \"0x%x: %s\"];" id id (primfn2s fn) then
+	(nodes := (nd : (deref nodes))) fseq
+	id
+    in
+    let top = draw expr then
+    (list2fp fp T "" "\n" "" (\fp.\s. fprintf fp "%s" s) (rev (deref nodes)))
+    fseq
+    (list2fp fp T "" "\n" "" (\fp.\s. fprintf fp "%s" s) (deref edges))
+    fseq
+    (fprintf fp "}\n") fseq
+    (fclose fp) fseq
+    let cmd = sprintf "display_dot %s" file then
+    tcl_eval [cmd]
+;
+
+
+let emit file expr =
+    // Put a dummy contant 0 in location 0
+    let rres = ref ["I 0"] in
+    letrec emit (APPL e1 e2) =
+	let n1 = emit e1 then
+	let n2 = emit e2 then
+	let cmd = sprintf "A %d %d" n1 n2 then
+	(rres := (cmd : (deref rres))) fseq
+	length (deref rres)-1
+     /\    emit (INT i) =
+	let cmd = sprintf "I %d" i then
+	(rres := (cmd : (deref rres))) fseq
+	length (deref rres)-1
+     /\    emit (PRIM_FUN fn) =
+	let cmd = emit_primfn fn then
+	(rres := (cmd : (deref rres))) fseq
+	length (deref rres)-1
+    in
+    let top = emit expr then
+    let res = (sprintf "# %d %d" top top):(rev (deref rres)) in
+    let fp = fopen file "w" then
+    let pr fp s = fprintf fp "%s" s in 
+    (list2fp fp T "" "\n" "\n" pr res) fseq
+    (fclose fp)
+;
+
+
+let expr = plus (INT 9) (INT 1);
+draw expr;
+expr;
+compile expr;
+emit "small.rom" (compile expr);
+
+let expr2 = plus (plus (minus (INT 3) (INT 1)) (INT 17)) (INT 1);
+expr2;
+draw expr2;
+
+compile expr2;
+draw (compile expr2);
+
+
+emit "medium.rom" (compile expr2);
+
+// 
+// let d x = x+x in
+// let q y = d y + d y in
+// q (12 - d 4)
+//
+// ---->
+let code =
+    APPL
+        (LAMBDA "d"
+            (APPL
+                (LAMBDA "q"
+                    (APPL
+                        (VAR "q")
+                        (minus (INT 12) (APPL (VAR "d") (INT 4)))
+                    )
+                )
+                (LAMBDA "y" (plus (APPL (VAR "d") (VAR "y")) (APPL (VAR "d") (VAR "y"))))
+            )
+        )
+        (LAMBDA "x" (plus (VAR "x") (VAR "x")))
+;
+(compile code);
+emit "big.rom" (compile code);
+
+// let f = \z.\w.w+z+z
+//     g = \z.z-3
+// in s f g 2
+// => ((\z.\w.w+z+z)2)((\z.z-3)2)
+// => (\w.w+2+2)(-1)
+// => 3
+let expr4 =
+  lett "f" (LAMBDA "z" (LAMBDA "w" (plus (VAR "w") (plus (VAR "z") (VAR "z"))))) (
+  lett "g" (LAMBDA "z" (minus (VAR "z") (INT 3))) (
+  s (VAR "f") (VAR "g") (INT 2)
+  ));
+expr4;
+compile expr4;
+emit "expr4.rom" (compile expr4);
+
+let expr5 =
+    lett "inc" (LAMBDA "x" (plus (VAR "x") (INT 1))) (APPL (VAR "inc") (INT 2))
+;
+expr5;
+compile expr5;
+
+let bplus e1 e2 = APPL (APPL (PRIM_FUN PLUS) e1) e2;
+
+let expr6 =
+    APPL (LAMBDA "x" (bplus (VAR "x") (INT 1))) (INT 3);
+expr6;
+draw expr6;
+compile expr6;
+draw (compile expr6);
+
+// (\x. 1+x) 3
+let expr7 = APPL (LAMBDA "x" (plus (INT 1) (VAR "x"))) (INT 3);
+expr7;
+draw expr7;
+compile expr7;
+draw (compile expr7);
+emit "paper.rom" (compile expr7);
+
+let expr8 =
+    APPL (LAMBDA "x" (bplus (VAR "x") (VAR "x"))) (INT 3)
+;
+expr8;
+draw expr8;
+compile expr8;
+draw (compile expr8);
+

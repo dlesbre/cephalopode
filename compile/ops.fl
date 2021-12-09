@@ -1,0 +1,70 @@
+let I = 0;
+let S = 1;
+let K = 2;
+let PLUS = 3;
+let MINUS = 4;
+let TIMES = 5;
+let DIV = 6;
+let MOD = 7;
+let NOT = 8;
+let L_AND = 9;
+let L_OR = 10;
+let ITE = 11;
+let EQ = 12;
+let NEQ = 13;
+let GEQ = 14;
+let GT = 15;
+
+let primfn2s 0 = "I"
+ /\ primfn2s 1 = "S"
+ /\ primfn2s 2 = "K"
+ /\ primfn2s 3 = "+"
+ /\ primfn2s 4 = "-"
+ /\ primfn2s 5 = "*"
+ /\ primfn2s 6 = "/"
+ /\ primfn2s 7 = "%"
+ /\ primfn2s 8 = "NOT"
+ /\ primfn2s 9 = "AND"
+ /\ primfn2s 10 = "OR"
+ /\ primfn2s 11 = "ITE"
+ /\ primfn2s 12 = "="
+ /\ primfn2s 13 = "!="
+ /\ primfn2s 14 = "≥"
+ /\ primfn2s 15 = ">"
+;
+
+let emit_primfn 0 = "C I"
+ /\ emit_primfn 1 = "C S"
+ /\ emit_primfn 2 = "C K"
+ /\ emit_primfn 3 = "P +"
+ /\ emit_primfn 4 = "P -"
+ /\ emit_primfn 5 = "P *"
+ /\ emit_primfn 6 = "P /"
+ /\ emit_primfn 7 = "P %"
+ /\ emit_primfn 8 = "P NOT"
+ /\ emit_primfn 9 = "P AND"
+ /\ emit_primfn 10 = "P OR"
+ /\ emit_primfn 11 = "P ITE"
+ /\ emit_primfn 12 = "P ="
+ /\ emit_primfn 13 = "P !="
+ /\ emit_primfn 14 = "P ≥"
+ /\ emit_primfn 15 = "P >"
+;
+
+let i a = APPL (PRIM_FUN I) a;
+let s a b c = APPL (APPL (APPL (PRIM_FUN S) a) b) c;
+let k a b = APPL (APPL (PRIM_FUN K) a) b;
+let plus a b = APPL b (APPL a (PRIM_FUN PLUS));
+let minus a b = APPL b (APPL a (PRIM_FUN MINUS));
+let times a b = APPL b (APPL a (PRIM_FUN TIMES));
+let div a b = APPL b (APPL a (PRIM_FUN DIV));
+let mod a b = APPL b (APPL a (PRIM_FUN MOD));
+let not a = APPL a (PRIM_FUN NOT);
+let l_and a b = APPL b (APPL (PRIM_FUN L_AND) a);
+let l_or a b = APPL b (APPL (PRIM_FUN L_OR) a);
+let ite a b c = APPL c (APPL (APPL (PRIM_FUN ITE) a) b);
+let eq a b = APPL b (APPL a (PRIM_FUN EQ));
+let neq a b = APPL b (APPL a (PRIM_FUN NEQ));
+let geq a b = APPL b (APPL a (PRIM_FUN GEQ));
+let gt a b = APPL b (APPL a (PRIM_FUN GT));
+

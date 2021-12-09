@@ -1,0 +1,17 @@
+Type,Name,DispName,Arity,SwapRank
+C,I,I,1,0
+C,S,S,3,0
+C,K,K,2,0
+P,PLUS,+,2,2
+P,MINUS,-,2,2
+P,TIMES,*,2,2
+P,DIV,/,2,2
+P,MOD,%,2,2
+P,NOT,NOT,1,1
+P,L_AND,AND,2,1
+P,L_OR,OR,2,1
+P,ITE,ITE,3,1
+P,EQ,=,2,2
+P,NEQ,!=,2,2
+P,GEQ,≥,2,2
+P,GT,>,2,2

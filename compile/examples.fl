@@ -1,0 +1,123 @@
+load "mk_rom.fl";
+
+
+let e1 = 32 * 32 * 2;
+mk_cephalopode_rom "_e1.rom" "e1";
+
+let e2 = 2048+0;
+mk_cephalopode_rom "_e2.rom" "e2";
+
+
+let paper_expr = (\x. 1+x) 3;
+mk_cephalopode_rom "_paper_expr.rom" "paper_expr";
+
+let paper_expr2 = (\x. 1+x) 13;
+mk_cephalopode_rom "_paper_expr2.rom" "paper_expr2";
+
+let paper_expr3 = (1+9)+5;
+mk_cephalopode_rom "_paper_expr3.rom" "paper_expr3";
+
+//let paper_expr3 = (\x. (1+9)+5) 13;
+//mk_cephalopode_rom "_paper_expr3.rom" "paper_expr3";
+
+let paper_expr4 = (\x. (1+9)+x) 13;
+mk_cephalopode_rom "_paper_expr4.rom" "paper_expr4";
+
+let paper_expr5 = (\x. (1+9)+(x-1)) 13;
+mk_cephalopode_rom "_paper_expr5.rom" "paper_expr5";
+
+
+let f x y = x+2*y+1;
+let e = f 1 (2+2);
+mk_cephalopode_rom "_e.rom" "e";
+
+letrec fac n = n = 0 => 1 | n* fac (n-1);
+
+let fac_example = fac 4;
+mk_cephalopode_rom "_fac_example.rom" "fac_example";
+
+letrec fac2 n acc = n = 0 => acc | fac2 (n-1) (n*acc);
+
+let fac2_example = fac2 4 1;
+mk_cephalopode_rom "_fac2_example.rom" "fac2_example";
+
+letrec fac3 n = n = 0 => 1 | fac3 (n-1) * n;
+
+let fac3_example = fac3 4;
+mk_cephalopode_rom "_fac3_example.rom" "fac3_example";
+
+
+letrec fac n = n = 0 => 1 | n* fac (n-1);
+let choose n r = fac n / (fac (n-r) * fac r);
+let sel_ex = choose 4 2;
+mk_cephalopode_rom "_sel_ex.rom" "sel_ex";
+
+
+let benchmark = choose 17 9;
+mk_cephalopode_rom "_benchmark.rom" "benchmark";
+
+
+letrec sum c n = n = 0 => 0 | c+(sum c (n-1))
+;
+let benchmark1 = sum 30 10;
+mk_cephalopode_rom "_benchmark1.rom" "benchmark1";
+
+
+letrec pow c n = n = 0 => 1 | c*(pow c (n-1));
+let benchmark2 = pow 3 10;
+mk_cephalopode_rom "_benchmark2.rom" "benchmark2";
+
+
+// In general
+let gN1 = 2**(3*INT_SZ)-12;
+let gN2 = 142;
+let gN3 = 2**(3*INT_SZ)-22;
+let gN4 = 2**(INT_SZ) + 3;
+let gN4 = 67;
+let gN5 = 22;
+let gN6 = 11;
+let gN7 = 28;
+let gN8 = 2**(3*INT_SZ)-22;
+
+//// For INT_SZ = 6
+//let N1 = 262132;
+//let N2 = 142;
+//let N3 = 262122;
+//let N4 = 67;
+//let N5 = 22;
+//let N6 = 11;
+//let N7 = 28;
+//let N8 = 262122;
+
+// For INT_SZ = 63
+let N1 = 784637716923335095479473677900958302012794430558004314100;
+let N2 = 142;
+let N3 = 784637716923335095479473677900958302012794430558004314090;
+let N4 = 67;
+let N5 = 22;
+let N6 = 11;
+let N7 = 28;
+let N8 = 784637716923335095479473677900958302012794430558004314090;
+
+gN1 = N1 => () | error "INT_SZ and N1 are inconsistent!";
+
+N1 fseq N2 fseq N3 fseq N4 fseq N5 fseq N5 fseq N7 fseq N8 fseq ();
+let benchmark3a = N1/N2;
+let benchmark3b = N3/N4;
+let benchmark3c = N5/N6;
+let benchmark3d = N7/N8;
+
+mk_cephalopode_rom "_benchmark3a.rom" "benchmark3a";
+mk_cephalopode_rom "_benchmark3b.rom" "benchmark3b";
+mk_cephalopode_rom "_benchmark3c.rom" "benchmark3c";
+mk_cephalopode_rom "_benchmark3d.rom" "benchmark3d";
+
+let benchmark3 = (N1*N2+N3*N4+N5*N6+N7*N8);
+mk_cephalopode_rom "_benchmark3.rom" "benchmark3";
+
+letrec fib n = 1 >= n => 1 | fib (n-1) + fib (n-2);
+let benchmark4 = fib 10;
+mk_cephalopode_rom "_benchmark4.rom" "benchmark4";
+
+
+quit;

@@ -1,0 +1,328 @@
+
+// Make sure fl is invoked with -C (or --cephalopode) flag.
+(get_combinator_expression "hd" fseq ())
+catch error "Need to run fl with -C flag!";
+
+// Get the Cephalopode type declarations needed for the ROM (node).
+cload (DIR^"../RTL/types.fl");
+
+// -------------------------------------------------------------------
+// fl versions of Cephalopode instructions
+// Allows running code in fl and get the same result.
+// Are NOT compiled to Cephalopode code.
+// -------------------------------------------------------------------
+
+let divmod sel_fun n d = 
+	d = 0 => error "Do not know how to handle the Cephalopode NIL..." |
+	let q = n / d in
+	let r = n % d in
+	sel_fun q r
+;
+
+// -------------------------------------------------------------------
+// Functions that uses Cephalopode instructions to perform fl functions
+// Are compiled to Cephalopode code.
+// -------------------------------------------------------------------
+
+let i_div {a::int} {b::int} = divmod (\q.\r. q) a b;
+let i_mod {a::int} {b::int} = divmod (\q.\r. r) a b;
+
+// -------------------------------------------------------------------
+// Functions that uses Cephalopode instructions to perform fl functions
+// -------------------------------------------------------------------
+
+let get_prim name = LEAF (PRIM_FN (rev_assoc name prim_fns));
+
+let mk_forcing_comb_1 prim_fn = APPLY (LEAF (PRIM_FN (-1001))) prim_fn;
+let mk_forcing_comb_2 prim_fn = APPLY (LEAF (PRIM_FN (-1002))) prim_fn;
+
+let cephalopode_functions = [
+	// fl name	"primitive function"
+	("divmod",	LEAF (PRIM_FN (-1))),
+	("AND",		mk_forcing_comb_2 (LEAF (PRIM_FN (-2)))),
+	("OR",		mk_forcing_comb_2 (LEAF (PRIM_FN (-3)))),
+	("NOT",		mk_forcing_comb_1 (LEAF (PRIM_FN (-4)))),
+	("prooc_init",	LEAF (PRIM_FN (-5))),
+	("i_plus",	mk_forcing_comb_2 (LEAF (PRIM_FN 9))),
+	("i_minus",	mk_forcing_comb_2 (LEAF (PRIM_FN 10))),
+	("i_mul",	mk_forcing_comb_2 (LEAF (PRIM_FN 15))),
+	("i_div",	mk_forcing_comb_2 (get_combinator_expression "i_div")),
+	("i_mod",	mk_forcing_comb_2 (get_combinator_expression "i_mod")),
+	("=",		mk_forcing_comb_2 (LEAF (PRIM_FN 23))),
+	("!=",		mk_forcing_comb_2 (LEAF (PRIM_FN 24))),
+	("i_gt",	mk_forcing_comb_2 (LEAF (PRIM_FN 21))),
+	("i_ge",	mk_forcing_comb_2 (LEAF (PRIM_FN 22))),
+	("cond",	mk_forcing_comb_1 (LEAF (PRIM_FN 18)))
+];
+
+let built_ins_combinators = [
+    // fl's PRIM_FN id	Cephalopode name
+    // -----------------------------------------
+    // Combinators
+    // -----------------------------------------
+    (-1001,		C_S1),
+    (-1002,		C_S2),
+    (0,                 C_S),
+    (1,                 C_K),
+    (2,                 C_I),
+    (3,                 C_C),
+    (4,                 C_B),
+    (31,                C_SPRIME),
+    (32,                C_CPRIME),
+    (33,                C_BSTAR),
+    (5,                 C_Y),
+    (69,                C_BPRIME)
+];
+
+let built_ins_functions = [
+    // -----------------------------------------
+    // Primitive functions
+    // -----------------------------------------
+    (9,                 P_PLUS),
+    (10,                P_MINUS),
+    (15,                P_TIMES),
+    (23,                P_EQ),
+    (24,                P_NEQ),
+    (21,                P_GT),
+    (22,                P_GEQ),
+    (18,                P_COND),
+    // In Cephalopode only
+    (-1,		P_DIVMOD),
+    (-2,		P_AND),
+    (-3,		P_OR),
+    (-4,		P_NOT),
+    (-5,		P_PROC_INIT)
+];
+
+//    (6,                 "P_HEAD"),
+//    (7,                 "P_TAIL"),
+//    (8,                 "P_CONS"),
+//    (16,                "P_DIVIDE"),
+//    (19,                "P_LESS"),
+//    (20,                "P_LEQ"),
+//    (25,                "P_VAR"),
+//    (26,                "P_CAT"),
+//    (27,                "P_EMPTY"),
+//    (28,                "P_LOAD"),
+//    (29,                "P_ERROR"),
+//    (30,                "P_SEQ"),
+//    (34,                "P_HELP"),
+//    (36,                "P_FORALL"),
+//    (37,                "P_THEREIS"),
+//    (38,                "P_PRINT"),
+//    (39,                "P_DEBUG"),
+//    (40,                "P_IDENTICAL"),
+//    (41,                "P_STRING_HD"),
+//    (42,                "P_STRING_TL"),
+//    (43,                "P_FAIL"),
+//    (44,                "P_IS_CONS"),
+//    (45,                "P_CATCH"),
+//    (46,                "P_SUC"),
+//    (47,                "P_CONSTR_EQ"),
+//    (48,                "P_QUANT_FORALL"),
+//    (49,                "P_QUANT_THEREIS"),
+//    (50,                "P_PFAIL"),
+//    (51,                "P_PCATCH"),
+//    (52,                "P_ORD"),
+//    (53,                "P_CHR"),
+//    (54,                "P_TUPLE"),
+//    (55,                "P_FST"),
+//    (56,                "P_SND"),
+//    (58,                "P_EXPLODE"),
+//    (59,                "P_IMPLODE"),
+//    (60,                "P_DEPENDS"),
+//    (61,                "P_BOOL2STR"),
+//    (62,                "P_INT2STR"),
+//    (63,                "P_TIME"),
+//    (64,                "P_BDD_SIZE"),
+//    (65,                "P_SUBSTITUTE"),
+//    (66,                "P_LOAD_EXE"),
+//    (68,                "P_PRINT_STE"),
+//    (70,                "P_FANIN_LIST"),
+//    (71,                "P_NODES"),
+//    (72,                "P_PROFILE"),
+//    (73,                "P_GET_NODE_VAL"),
+//    (74,                "P_FANOUT_LIST"),
+//    (75,                "P_GET_DELAYS"),
+//    (76,                "P_TRACE"),
+//    (77,                "P_SAVE_FSM"),
+//    (78,                "P_BDD_SAVE"),
+//    (79,                "P_BDD_LOAD"),
+//    (80,                "P_BDD_REORDER"),
+//    (81,                "P_RELPROD_THEREIS"),
+//    (82,                "P_RELPROD_FORALL"),
+//    (83,                "P_RVAR"),
+//    (84,                "P_VAR_ORDER"),
+//    (85,                "P_SYSTEM"),
+//    (86,                "P_EVAL"),
+//    (87,                "P_GCD"),
+//    (88,                "P_LP"),
+//    (89,                "P_CACHE"),
+//    (90,                "P_IS_TUPLE"),
+//    (91,                "P_STRICT_CONS"),
+//    (92,                "P_STRICT_TUPLE"),
+//    (93,                "P_FSM_OBJECT"),
+//    (94,                "P_IS_STABLE"),
+//    (95,                "P_MK_REF_VAR"),
+//    (96,                "P_DEREFERENCE"),
+//    (97,                "P_UPDATE_RVAR"),
+//    (98,                "P_REF_VAR"),
+//    (99,                "P_WRITE_TO_FILE"),
+//    (100,               "P_BVAND"),
+//    (101,               "P_BVOR"),
+//    (102,               "P_BVXOR"),
+//    (103,               "P_BVNOT"),
+//    (104,               "P_GET_EXCIT"),
+//    (105,               "P_TCL_EVAL"),
+//    (106,               "P_FSEQ"),
+//    (107,               "P_NSEQ"),
+//    (108,               "P_PRINTF"),
+//    (109,               "P_SPRINTF"),
+//    (110,               "P_EPRINTF"),
+//    (111,               "P_FPRINTF"),
+//    (112,               "P_FILEFP"),
+//    (113,               "P_FOPEN"),
+//    (114,               "P_FCLOSE"),
+//    (115,               "P_FFLUSH"),
+//    (116,               "P_GEN_CATCH"),
+//    (117,               "P_GET_VOSSRC"),
+//    (118,               "P_UPDATE_VOSSRC"),
+//    (119,               "P_EXTAPI_FN"),
+//    (120,               "P_SAVE_GRAPH"),
+//    (121,               "P_LOAD_GRAPH"),
+//    (122,               "P_EXIT"),
+//    (123,               "P_THEN"),
+//    (124,               "P_SSCANF"),
+//    (125,               "P_UNTYPE"),
+//    (126,               "P_UNQUOTE"),
+//    (200,               "P_START_SUPER_COMB"),
+//    (1022,              "P_VOID"),
+//    (1023,              "P_ILLEGAL"),
+
+
+
+let node2romline {n::node} =
+    let pr b = b=> "1" | "0" in
+    list2str T "" "" "" pr (wexpr2bool [] (hw_destr n))
+;
+
+let is_member key l = (find_first0 (\(k,_). k = key) l) != 0;
+
+let emit_leaf rres lt =
+    let emit1 nd =
+	(rres := (node2romline nd:(deref rres))) fseq
+	let res = length (deref rres)-1 then
+	res
+    in
+    let do_emit (INT i) =
+	letrec emit_int [i] = (emit1 (mk_node_Int_simple i))
+	  /\   emit_int (i:rem) =
+	    let addr = emit_int rem then
+	    let nd = mk_node_uInt i addr then
+	    emit1 nd
+	in
+	let cnv i =
+	    let es = explode (sprintf "%b" i) in
+	    let rem = length es % INT_SZ in 
+	    let add = rem = 0 => 0 | INT_SZ-rem in
+	    let chunks = cluster INT_SZ ((replicate add "0")@es) in
+	    let mk l = {''(sscanf "%b" (implode l))::int} in
+	    rev (map mk chunks)
+	in
+	emit_int (cnv i)
+     /\ do_emit (STRING s) =
+	eprintf "STRING leaftype not supported yet (string %s)" s
+     /\ do_emit (BOOL e) =
+	e == T => emit1 node_Int_true |
+	e == F => emit1 node_Int_false |
+	eprintf "BOOL leaftype not supported for BDD expressions (%B)" e
+     /\ do_emit (BEXPR be) =
+	eprintf "BEXPR leaftype not supported"
+     /\ do_emit (EXT_OBJ i) =
+	eprintf "EXT_OBJ leaftype not supported"
+     /\ do_emit (PRIM_FN pfn) =
+	    is_member pfn built_ins_combinators =>
+		let cfn = assoc pfn built_ins_combinators in
+		emit1 ('0<--type? G_COMB<--comb? cfn)
+	    |
+	    is_member pfn built_ins_functions =>
+		let cfn = assoc pfn built_ins_functions in
+		emit1 ('0<--type? G_PRIM<--prim? cfn)
+	    |
+	    eprintf "Unsupported prim function (%d %s)" pfn (assoc pfn prim_fns)
+     /\ do_emit (EXT_PRIM_FN pfn s) =
+	    eprintf "EXT_PRIM_FN not supported yet (%d %s)" pfn s
+     /\ do_emit (USERDEF i) =
+	    eprintf "USERDEF %d is not supported in emit" i
+    in
+    do_emit lt
+;
+
+let mk_rom comb_expr =
+    // Put a dummy contant 0 in location 0
+    let i0 = node2romline ('0<--type? G_INT <--int? (mk_Int 0)) then
+    let rres = ref [i0] then
+    letrec emit (APPLY e1 e2) =
+        let n1 = emit e1 then
+        let n2 = emit e2 then
+	let cmd = node2romline ('0 <--type? G_APPL
+				   <--laddr? ''n1
+				   <--raddr? ''n2)
+	then
+        (rres := (cmd : (deref rres))) fseq
+        let res = length (deref rres)-1 then
+	res
+     /\   emit (LEAF lt) =
+	emit_leaf rres lt
+     /\   emit (VAR s) =
+	eprintf "Combinator expression with free variable (%s)" s
+     /\   emit (LAMBDA s t) =
+	eprintf "Combinator expression with lambds (%s)" s
+     /\   emit (CONS h t) =
+	eprintf "CONS not supported yet"
+     /\   emit (NIL) =
+	eprintf "NIL not supported yet"
+    in
+    let top = emit comb_expr then
+    let cell0 = node2romline ('0<--end_addr? ''top <--entry_addr? ''top) in
+    let res = cell0:(rev (deref rres)) in
+    top,res
+;
+
+let cond_prim_fn = rev_assoc "P_COND" prim_fns;
+
+let cephalopode_expr e =
+    letrec expand (APPLY e1 e2) = APPLY (expand e1) (expand e2)
+     /\    expand (LEAF (USERDEF i)) =
+	val (name,expr) = get_userdef_combinator_expression i in
+	is_member name cephalopode_functions =>
+	    expand (assoc name cephalopode_functions)
+	|
+	expand expr
+     /\    expand (LEAF (EXT_PRIM_FN 39 s)) = (LEAF (PRIM_FN 2)) // DEBUG-->P_I
+     /\    expand (LEAF (PRIM_FN pfn)) assuming (pfn = cond_prim_fn) =
+	    mk_forcing_comb_1  (LEAF (PRIM_FN cond_prim_fn))
+     /\    expand (VAR s) =
+	eprintf "VAR in combinator expression??? (%s)" s
+     /\    expand (LAMBDA s b) =
+	eprintf "LAMBDA in combinator expression??? (%s)" s
+     /\    expand other = other
+    in
+    expand e
+;
+
+
+
+let mk_cephalopode_rom file expression_name =
+    let fp = fopen file "w" then
+    let fl_expr = get_combinator_expression expression_name then
+    let ceph_expr = cephalopode_expr fl_expr then
+    val (top,rom) = mk_rom ceph_expr then
+    let pr fp s = fprintf fp "%s" s in
+    (fprintf stdout "-I- Writing out %d lines of ROM code to file %s\n"
+		    (length rom) file) fseq
+    (fprintf stdout "-I- Toplevel redex at address: %d\n" top) fseq
+    (list2fp fp T "" "\n" "\n" pr rom) fseq
+    (fclose fp)
+;
+
