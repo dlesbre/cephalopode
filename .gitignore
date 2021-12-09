@@ -1,0 +1,10 @@
+# Bifrost executable
+bifrost/bifrost
+
+# Bifrost compilation files
+bifrost/*.o
+bifrost/*.hi
+bifrost/Lang
+
+# Bifrost examples
+bifrost/examples/**/*.prog.fl

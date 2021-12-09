@@ -1,0 +1,99 @@
+update_vossrc "RECURSION-CALL-LIMIT" "30000";
+cload (DIR^"types.fl");
+cload (DIR^"memory/memory_system.fl");
+cload (DIR^"reduction/reduction.fl");
+cload (DIR^"stack.fl");
+
+let cephalopode =
+    bit_input	    clk.
+    bit_input	    reset.
+    cr_inout	    cr.
+    bit_output	    between_jobs.
+    bit_output	    evaluation_done.
+    // Internals
+    bit_internal    reducto.
+    bit_internal    jmp.
+    addr_internal   jmp_addr.
+    bit_internal    r_allocate_req.
+    bit_internal    r_allocate_ack.
+    addr_internal   r_allocate_addr.
+    bit_internal    r_read_req.
+    bit_internal    r_write_req.
+    addr_internal   r_rw_addr.
+    bit_internal    r_rw_ack.
+    node_internal   r_write_data.
+    node_internal   r_read_data.
+    bit_internal    a_allocate_req.
+    bit_internal    a_allocate_ack.
+    addr_internal   a_allocate_addr.
+    bit_internal    a_read_req.
+    bit_internal    a_write_req.
+    addr_internal   a_rw_addr.
+    bit_internal    a_rw_ack.
+    node_internal   a_write_data.
+    node_internal   a_read_data.
+    bit_internal    stack_push_req.
+    bit_internal    stack_pop_req.
+    bit_internal    stack_ack.
+    bit_internal    stack_fail.
+    bit_internal    empty_stack.
+    addr_internal   r2s_spine_addr.
+    addr_internal   r2s_arg_addr.
+    addr_internal   s2r_spine_addr.
+    addr_internal   s2r_arg_addr.
+    //
+    CELL "draw_hier cephalopode" [
+	//
+	memory_system clk reset cr 
+	    reducto jmp jmp_addr
+	    r_allocate_req r_allocate_ack r_allocate_addr
+	    r_read_req r_write_req r_rw_addr r_rw_ack r_write_data r_read_data
+	    a_allocate_req a_allocate_ack a_allocate_addr
+	    a_read_req a_write_req a_rw_addr a_rw_ack a_write_data a_read_data,
+	//
+//%%%%%%%%%%%%%%
+//	scheduler clk reset
+//		  set_callback sch_addr mask expr
+//		  inps
+//		  jmp jmp_addr
+//		  done
+//		  take_snapshot mark_root_req mark_root_ack
+//		  mark_req mark_addr mark_ack,
+//%%%%%%%%%%%%%%
+	//
+	reduction_unit clk reset
+	    r_rw_ack r_allocate_ack
+	    r_allocate_addr
+	    r_read_data
+	    r_read_req r_write_req r_allocate_req
+	    r_rw_addr
+	    r_write_data
+	    //
+	    a_rw_ack a_allocate_ack
+	    a_allocate_addr
+	    a_read_data
+	    a_read_req a_write_req a_allocate_req
+	    a_rw_addr
+	    a_write_data
+	    // Stack
+	    stack_ack stack_fail
+	    s2r_spine_addr s2r_arg_addr
+	    stack_push_req stack_pop_req
+	    r2s_spine_addr r2s_arg_addr
+	    // other
+	    reducto
+	    jmp
+	    jmp_addr
+	    between_jobs
+	    empty_stack
+	    evaluation_done,
+	//
+	stack clk reset stack_push_req stack_pop_req stack_ack stack_fail
+		r2s_spine_addr r2s_arg_addr s2r_spine_addr s2r_arg_addr
+		empty_stack
+];
+
+let p = cephalopode 'clk 'reset 'cr 'between_jobs 'evaluation_done;
+
+printf "Compiling the processor model....\n";
+wtime (p fseq 1);
