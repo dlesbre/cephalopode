@@ -9,7 +9,7 @@ let vis = STE_debug ckt;
 wtime vis;
 
 
-let N = 2100;
+let N = 650;
 
 let ant = 
     (make_CR_ant ckt [("i_ram_latency", RAM_LATENCY),
@@ -18,14 +18,7 @@ let ant =
   and
     "cr[2:0]" is 0 for N cycles
   and
-    mk_ROM_ant ckt "flash" "../compile/_benchmark3.rom"
-//    mk_ROM_ant ckt "flash" "../compile/_benchmark4.rom"
-//    mk_ROM_ant ckt "flash" "../compile/_e2.rom"
-//    mk_ROM_ant ckt "flash" "../compile/_benchmark.rom"
-//    mk_ROM_ant ckt "flash" "../compile/_sel_ex.rom"
-//    mk_ROM_ant ckt "flash" "../compile/_big_fac.rom"
-//    mk_ROM_ant ckt "flash" "../compile/_fac_example.rom"
-//    mk_ROM_ant ckt "flash" "../compile/_paper_expr2.rom"
+    mk_ROM_ant ckt "flash" "../compile/_paper_expr5.rom"
   and
     "clk" is_clock N
   and
@@ -251,41 +244,17 @@ let start_RAM_observer vis root_addr =
 // ========================================================================
 //add_waveform vis ["clk"];
 add_waveform vis ["i2/i1/state[5:0]"];
-
 add_waveform vis ["i2/is_comb"];
 add_waveform vis ["i2/i19/cur_comb[3:0]"];
 add_waveform vis ["i2/is_prim"];
 add_waveform vis ["i2/i19/cur_prim[3:0]"];
 add_waveform vis ["evaluation_done"];
-
 add_waveform vis ["i1/i6/ram[0][24:0]"];
-
 add_waveform vis ["i2/fetch"];
 
-draw_set_time vis (N-10);
 
-start_RAM_observer vis 52;
+draw_set_time vis 300;
 
+// Show the reduction graph to be evaluated.
+start_RAM_observer vis 23;
 
-//%%%%%%%%%%
-//
-//let print_duplicates hier l =
-//    let dups = map hd (filter (\l. length l > 1) (partition id l)) then
-//    dups = [] => () |
-//    let pref = list2str T "" "/" "/" (sprintf "i%d") (rev hier) in
-//    let pr dup = fprintf stderr "Node %s%s is duplicated\n" pref dup in
-//    foreach pr dups
-//;
-//
-//letrec check_pexlif hier (PINST n a l ints outs ints (P_HIER pl)) =
-//    (print_duplicates hier ints) fseq
-//    letrec check i (c:cs) = check_pexlif (i:hier) c
-//     /\    check i [] = ()
-//    in
-//    check 1 pl
-// /\    check_pexlif hier other = ()
-//;
-//
-//
-//let p = cephalopode 'clk 'reset 'cr 'between_jobs 'evaluation_done;
-//check_pexlif [] p;
