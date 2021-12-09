@@ -1,0 +1,24 @@
+name cbc;
+protocol pulseecho alwayson;
+
+#include "types.inc"
+
+action read:ReadFifoBlock provided by external via validready alwayson;
+action write:WriteFifoBlock provided by external via validready alwayson;
+action cipher:Cipher provided by external via pulseecho alwayson;
+
+subroutine main : iv:block -> key:key -> ()
+{
+    var block ptxt, ctxt;
+    
+    ctxt = iv;
+    
+    while(1)
+    {
+        ptxt = do read;
+        ctxt = do cipher 0 key (ptxt ^ ctxt);
+        do write ctxt;
+    }
+    
+    return;
+}

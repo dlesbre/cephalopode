@@ -1,0 +1,38 @@
+name example;
+
+////////////////////////////////////////
+// Type declarations
+////////////////////////////////////////
+
+type address => "byte";
+type node => "node";
+fields node = [left:address, right:address];
+
+state RAM_STATE;
+
+actiontype MemRead  = addr:address -> dout:node        reading [RAM_STATE] writing [];
+actiontype MemWrite = addr:address -> din:node -> ()   reading [RAM_STATE] writing [RAM_STATE];
+
+////////////////////////////////////////
+// Actual stuff
+////////////////////////////////////////
+
+action mem_read:MemRead provided by external via fourphase;
+action mem_write:MemWrite provided by external via fourphase;
+
+subroutine main : addr:address -> ()
+{
+    var node n;
+    var address tmp;
+
+    n = do mem_read addr;
+
+    tmp = n-->left;
+    n-->left = n-->right;
+    n-->right = tmp;
+
+    do mem_write addr n;
+
+    return;
+}
+

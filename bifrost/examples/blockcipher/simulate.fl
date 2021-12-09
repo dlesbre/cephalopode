@@ -1,0 +1,95 @@
+// Test of the crypto thing.
+
+cload "ste.fl";
+
+TYPE "word" 8;
+TYPE "block" 16;
+TYPE "key" 16;
+
+cload (DIR^"fifo.fl");
+cload (DIR^"source.prog.fl");
+cload (DIR^"sink.prog.fl");
+cload (DIR^"cbc.prog.fl");
+cload (DIR^"cipher_caesar.prog.fl");
+
+
+let everything =
+  bit_input clk.
+  bit_input reset.
+  bit_input start.
+  key_input key.
+  block_input iv.
+  block_output probe. // output of fifo2
+  
+  // fifo 1 (source -> cbc)
+  bit_internal fifo1_put_ready fifo1_put_valid fifo1_get_ready fifo1_get_valid.
+  block_internal fifo1_in fifo1_out.
+
+  // fifo 2 (cbc -> sink)
+  bit_internal fifo2_put_ready fifo2_put_valid fifo2_get_ready fifo2_get_valid.
+  block_internal fifo2_in fifo2_out.
+
+  // cipher
+  bit_internal cipher_req cipher_ack cipher_decr.
+  key_internal cipher_k.
+  block_internal cipher_in cipher_out.
+
+  // unused ack wires
+  bit_internal source_ack cbc_ack sink_ack.
+
+  CELL "draw_hier everything" [
+    probe <- fifo2_out,
+    fifo clk reset
+      fifo1_put_ready fifo1_put_valid fifo1_in
+      fifo1_get_ready fifo1_get_valid fifo1_out,
+    fifo clk reset
+      fifo2_put_ready fifo2_put_valid fifo2_in
+      fifo2_get_ready fifo2_get_valid fifo2_out,
+    source clk reset start source_ack fifo1_put_ready fifo1_put_valid fifo1_in,
+    sink   clk reset start sink_ack   fifo2_get_ready fifo2_get_valid fifo2_out,
+    cbc clk reset start cbc_ack
+      iv key
+      fifo1_get_ready fifo1_get_valid fifo1_out
+      fifo2_put_ready fifo2_put_valid fifo2_in
+      cipher_req cipher_ack                        // comment out if cipher is combinational
+      cipher_decr cipher_k cipher_in cipher_out,
+    cipher_caesar
+      clk reset cipher_req cipher_ack              // comment out if cipher is combinational
+      cipher_decr cipher_k cipher_in cipher_out
+  ];
+
+let v = STE_debug (pexlif2fsm (everything 'clk 'reset 'start '0x1234 '0x0000 'probe));
+
+let ant =
+    let N = 100 in
+    let M = 70 in
+    "clk" is_clock N
+  and
+    "reset" is 1 for 1 cycle otherwise 0 until N cycles
+  and
+    "start" is 0 for 1 cycles otherwise 1 until 2 cycles otherwise 0 until N cycles
+;
+
+STE "-e" v [] ant [] [];
+let vis = get_current_vis ();
+draw_set_time vis 0;
+
+add_waveform vis ["fifo1 waveforms"];
+add_waveform vis ["i1/fifo1_in[15:0]"];
+add_waveform vis ["i1/i2/put_go"];
+add_waveform vis ["i1/fifo1_out[15:0]"];
+add_waveform vis ["i1/i2/get_go"];
+
+add_waveform vis ["cipher waveforms"];
+add_waveform vis ["i1/cipher_req"];
+add_waveform vis ["i1/cipher_ack"];
+add_waveform vis ["i1/cipher_in[15:0]"];
+add_waveform vis ["i1/cipher_out[15:0]"];
+
+add_waveform vis ["fifo2 waveforms"];
+add_waveform vis ["i1/fifo2_in[15:0]"];
+add_waveform vis ["i1/i3/put_go"];
+add_waveform vis ["i1/fifo2_out[15:0]"];
+add_waveform vis ["i1/i3/get_go"];
+
+

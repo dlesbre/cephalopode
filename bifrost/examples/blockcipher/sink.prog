@@ -1,0 +1,29 @@
+name sink;
+protocol pulseecho alwayson;
+
+#include "types.inc"
+
+action read:ReadFifoBlock provided by external via validready alwayson;
+
+subroutine main : ()
+{
+    var word i;
+
+    while(1)
+    {
+        --%<--
+
+        // read from the fifo
+        do read;
+
+        // delay for a while
+        /*
+        for(i = 0; i < 10; i = i + 1)
+        {
+            --%<--
+        }
+        */
+    }
+
+    return;
+}

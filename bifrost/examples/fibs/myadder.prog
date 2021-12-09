@@ -1,0 +1,10 @@
+name myadder;
+protocol combinational alwayson;
+
+#include "types.inc"
+
+subroutine main : x:int -> y:int -> z:int
+{
+    z = x + y;
+    return;
+}

@@ -1,0 +1,7 @@
+add_waveform vis ["a'fib1'pwrreq"];
+add_waveform vis ["a'fib1'pwrack"];
+add_waveform vis ["i1/eclk"];
+
+add_waveform vis ["a'fib2'pwrreq"];
+add_waveform vis ["a'fib2'pwrack"];
+add_waveform vis ["i3/eclk"];

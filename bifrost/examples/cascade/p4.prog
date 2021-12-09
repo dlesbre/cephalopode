@@ -1,0 +1,7 @@
+name p4;
+protocol twophase;
+
+subroutine main : ()
+{
+    return;
+}

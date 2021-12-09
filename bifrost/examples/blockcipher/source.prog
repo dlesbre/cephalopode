@@ -1,0 +1,42 @@
+name source;
+protocol pulseecho alwayson;
+
+#include "types.inc"
+
+action write:WriteFifoBlock provided by external via validready alwayson;
+
+subroutine main : ()
+{
+    var block data;
+    var word i;
+
+    // wait briefly
+    --%<--
+    for(i = 0; i < 2; i = i + 1)
+    {
+        --%<--
+    }
+
+    // write several blocks
+    --%<--
+    for(data = 1; data <= 10; data = data + 1)
+    {
+        do write data;
+    }
+
+    // wait
+    --%<--
+    for(i = 0; i < 16; i = i + 1)
+    {
+        --%<--
+    }
+
+    // write several more blocks
+    --%<--
+    for(data = 11; data <= 20; data = data + 1)
+    {
+        do write data;
+    }
+
+    return;
+}

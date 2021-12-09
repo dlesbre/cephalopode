@@ -1,0 +1,30 @@
+cload "ste.fl";
+
+// A fifo of size one that talks "valid-ready" to upstream and downstream.
+let fifo =
+  // common
+  bit_input  clk.
+  bit_input  reset.
+  // put
+  bit_input  put_ready.
+  bit_output put_valid.
+  input      put_data.
+  // get
+  bit_input  get_ready.
+  bit_output get_valid.
+  output     get_data.
+  // internal
+  bit_internal has_data.
+  internal     data.
+  bit_internal put_go.
+  bit_internal get_go.
+  // circuit
+  CELL "draw_hier fifo" [
+    re_ff_reset clk reset (('~' get_go) '&' (has_data '|' put_go)) has_data,
+    re_ff_en_reset clk put_go reset put_data data,
+    put_go <- put_ready '&' put_valid,
+    get_go <- get_ready '&' get_valid,
+    put_valid <- '~' has_data,
+    get_valid <- has_data,
+    get_data <- data
+  ];

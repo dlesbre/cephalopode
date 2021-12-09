@@ -1,0 +1,30 @@
+/*
+ * Module that computes the nth Fibonacci number, with the convention that the
+ * 0th Fibonacci number is 0. Relies on an adder module "myadder", defined in
+ * myadder.prog.
+ */
+
+name fib;
+protocol pulseecho powershake;
+
+#include "types.inc"
+
+actiontype Adder = x:int -> y:int -> z:int reading [] writing []; /* give spec? */
+action adder:Adder provided by "myadder" via combinational alwayson;
+
+subroutine main : n:int -> fibnum:int
+{
+    var int next, nextnext;
+    fibnum = 0;
+    next = 1;
+
+    while(n > 0)
+    {
+        nextnext = do adder fibnum next;
+        fibnum = next;
+        next = nextnext;
+        n = n - 1;
+    }
+
+    return;
+}

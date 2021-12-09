@@ -1,0 +1,11 @@
+name recursive;
+
+subroutine main : ()
+{
+  call foo;
+}
+
+subroutine foo : ()
+{
+  call main;
+}

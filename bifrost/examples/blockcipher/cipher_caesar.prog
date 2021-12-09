@@ -1,0 +1,14 @@
+name cipher_caesar;
+protocol pulseecho alwayson;
+//protocol combinational alwayson;
+
+#include "types.inc"
+
+subroutine main : decr:bit -> k:key -> din:block -> dout:block
+{
+     var block k_block;
+     
+     k_block = ("\\x. SX x" :: key -> block) k;
+     dout = if decr then din - k_block else din + k_block; 
+     return;
+}

@@ -1,0 +1,29 @@
+cload "ste.fl";
+
+TYPE "word" 16;
+
+cload (DIR^"p4.prog.fl");
+cload (DIR^"p3.prog.fl");
+cload (DIR^"p2.prog.fl");
+cload (DIR^"p1.prog.fl");
+
+let v = STE_debug (pexlif2fsm (p1 'clk 'reset 'req 'ack));
+
+let ant =
+    let N = 100 in
+    let M = 70 in
+    "clk" is_clock N
+  and
+    "reset" is 1 for 1 cycle otherwise 0 until N cycles
+  and
+    "req" is 0 for 6 cycles otherwise 1 until M cycles otherwise 0 until N cycles
+;
+
+STE "-e" v [] ant [] [];
+let vis = get_current_vis ();
+draw_set_time vis 0;
+add_waveform vis ["req"];
+add_waveform vis ["ack"];
+add_waveform vis ["advance"];
+add_waveform vis ["start"];
+add_waveform vis ["update"];

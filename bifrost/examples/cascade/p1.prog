@@ -1,0 +1,12 @@
+name p1;
+protocol twophase;
+
+actiontype Boring = () reading [] writing [];
+
+action boring:Boring provided by "p2" via twophase;
+
+subroutine main : ()
+{
+    do boring;
+    return;
+}
