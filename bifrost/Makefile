@@ -6,6 +6,9 @@ grammar: cleangrammar
 	happy -gca Lang/ParLang.y
 	alex -g Lang/LexLang.x
 
+# No display of executed commands.
+$(VERBOSE).SILENT:
+
 #testgrammar: grammar
 #	runhaskell Lang/TestLang.hs < test/newtest.prog
 
