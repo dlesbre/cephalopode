@@ -7,12 +7,24 @@ Cephalopode is developed as part of the [Octopi Project](https://octopi.chalmers
 This repository also contains the Bifröst compiler, a synthesis tool used to create RTL code for Cephalopode from the eponimous language.
 
 **Contents:**
+- [Repository description](#repository-description)
 - [Dependencies](#dependencies)
 	- [Bifröst](#bifröst)
 	- [Cephalopode](#cephalopode)
 - [References](#references)
 
-The main feature of Cephalopode ar
+## Repository description
+
+This repository is organized as follows:
+- `bifrost/` - source for the Bifröst compiler, can be built with `make bifrost`
+- `bifrost/examples/` - small code examples in Bifröst, can be compiled to FL with `make bifrost-examples`
+- `RTL/` - an RTL description of the Cephalopode processor written in HFL. A fast example can be run by loading the `cephalopode.fl` main file. (run `make cephalopode`)
+- `RTL/ALU/` - the Cephalopode ALU, performs operations on arbitrary-precision integers. It contains some parts in Stately (`.fsm` files), some in Bifröst (`.prog` files) as well as their compiled FL code (corresponding `.fsm.fl` and `.prog.fl`)
+
+	You can run `make ALU-test` to load the ALU test suite (`RTL/ALU/ALU_test.fl`) then evaluate the relevant test in the interpretor (for instance `TEST_ADD;`). Beware that some of these can be very long
+
+- `compile/` - tools to create ROM images for Cephalopode
+- `Makefile` - see `make help` for a list of targets
 
 ## Dependencies
 

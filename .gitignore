@@ -5,3 +5,6 @@ bifrost/bifrost
 bifrost/*.o
 bifrost/*.hi
 bifrost/Lang
+
+# Bifrost examples
+bifrost/examples/**/*.prog.fl
