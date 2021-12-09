@@ -6,7 +6,7 @@ cload "ste.fl";
 //let NODES = 2**8;
 //let NODES = 2**6;
 let NODES = 2**9;
-let INT_SZ  = 63;
+let INT_SZ  = 6;
 
 let ADDR_SZ = bits_needed (NODES-1);
 
