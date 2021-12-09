@@ -2,13 +2,15 @@ FL = fl
 
 BIFROST = ./bifrost
 BIFROST_EXE = $(BIFROST)/bifrost
-BIFROST_EXAMPLES = $(BIFROST)/examples/blockcipher
+BIFROST_EXAMPLES = $(BIFROST)/examples
 
 CEPHALOPODE = ./RTL/cephalopode.fl
 ALU_TEST = ./RTL/ALU/ALU_test.fl
 EXAMPLES = ./compile/examples.fl
 
-BIFROST_EXAMPLES_LIST = cbc cipher_caesar sink source
+BIFROST_EXAMPLES_LIST = \
+	$(addprefix blockcipher/, cbc cipher_caesar sink source) \
+	$(addprefix fib/, fib myadder)
 
 color = on
 
