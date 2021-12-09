@@ -9,8 +9,6 @@ This repository also contains the Bifröst compiler, a high-level synthesis tool
 **Contents:**
 - [Repository description](#repository-description)
 - [Dependencies](#dependencies)
-	- [Bifröst](#bifröst)
-	- [Cephalopode](#cephalopode)
 - [References](#references)
 
 ## Repository description
@@ -28,12 +26,7 @@ This repository is organized as follows:
 
 ## Dependencies
 
-### Bifröst
-
-The Bifröst compiler is written in Haskell. It requires:
-- The Haskell platform
-- bnfc ("The BNF Converter", on Ubuntu: `apt install bnfc`)
-### Cephalopode
+The Bifröst compiler is written in Haskell. It requires the Haskell platform
 
 Building and running Cephalopode requires [Voss II](https://github.com/TeamVoss/VossII), which can be downloaded and installed from the linked repository.
 
