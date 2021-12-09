@@ -4,7 +4,7 @@ This repository contains the source code for the Cephalopode processor. Cephalop
 
 Cephalopode is developed as part of the [Octopi Project](https://octopi.chalmers.se/).
 
-This repository also contains the Bifröst compiler, a synthesis tool used to create RTL code for Cephalopode from the eponimous language.
+This repository also contains the Bifröst compiler, a high-level synthesis tool used to create RTL code for Cephalopode from the eponymous language.
 
 **Contents:**
 - [Repository description](#repository-description)
