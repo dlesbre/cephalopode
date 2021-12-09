@@ -1,0 +1,291 @@
+update_vossrc "RECURSION-CALL-LIMIT" "30000";
+// Don't cload this file!
+load (DIR^"core_cephalopode.fl");
+
+let ckt = pexlif2fsm p;
+wtime (ckt fseq 2);
+
+let vis = STE_debug ckt;
+wtime vis;
+
+
+let N = 2100;
+
+let ant = 
+    (make_CR_ant ckt [("i_ram_latency", RAM_LATENCY),
+		      ("ram_latency", RAM_LATENCY),
+		      ("i_rom_latency", ROM_LATENCY)] (N cycles))
+  and
+    "cr[2:0]" is 0 for N cycles
+  and
+    mk_ROM_ant ckt "flash" "../compile/_benchmark3.rom"
+//    mk_ROM_ant ckt "flash" "../compile/_benchmark4.rom"
+//    mk_ROM_ant ckt "flash" "../compile/_e2.rom"
+//    mk_ROM_ant ckt "flash" "../compile/_benchmark.rom"
+//    mk_ROM_ant ckt "flash" "../compile/_sel_ex.rom"
+//    mk_ROM_ant ckt "flash" "../compile/_big_fac.rom"
+//    mk_ROM_ant ckt "flash" "../compile/_fac_example.rom"
+//    mk_ROM_ant ckt "flash" "../compile/_paper_expr2.rom"
+  and
+    "clk" is_clock N
+  and
+    "reset" is 1 for 1 cycle otherwise 0 until N cycles
+;  
+
+let trl = 
+    // RAM content
+    let lines = 2**ADDR_SZ in
+    let width = hw_size {'0::node} in
+    let mem = sprintf "i1/i6/ram[%d:0][%d:0]" (lines-1) (width-1) in
+    let mem_nds = md_expand_vector mem then
+    // Stack content
+    let lines = STACK_DEPTH in
+    let width = hw_size {'0::stack} in
+    let stack = sprintf "i3/stack_mem[%d:0][%d:0]" (lines-1) (width-1) in
+    let stack_nds = md_expand_vector stack then
+    // Other interesting wires
+    let rel_nds = ["i2/i1/state[5:0]", "i2/is_comb", "i2/i19/cur_comb[3:0]",
+		   "i2/is_prim", "i2/i19/cur_prim[3:0]", "evaluation_done",
+		   "i2/fetch"]
+    then
+    (map (\n. n,0,N cycles) (md_expand_vectors (rel_nds@stack_nds@mem_nds)))
+//    @(map (\n. n,25000, N cycles) (nodes ckt))
+;
+
+let ste = STE "" vis [] ant [] trl;
+ste;
+
+
+
+let ram_observer_list_r = ref {[]:: (string#observer) list};
+
+let add_ram_observer w observer =
+    let rem = filter (\p. fst p != w) (deref ram_observer_list_r) then
+    (ram_observer_list_r := ((w,observer):rem))
+;
+
+let fl_remove_ram_observer w =
+    let idx = find_first0 (\p. fst p = w) (deref ram_observer_list_r) then
+    idx = 0 => () |
+    let observer = snd (el idx (deref ram_observer_list_r)) then
+    (delete_observer observer) fseq
+    let rem = filter (\p. fst p != w) (deref ram_observer_list_r) then
+    (ram_observer_list_r := rem)
+;
+export_to_tcl fl_remove_ram_observer;
+
+let start_RAM_observer vis root_addr =
+    let RAM2dot ste root_addr time dot_file =
+	let Ctp n = wexpr2bool [] (hw_destr n) in
+	let Caddr n = wexpr2bool [] (hw_destr n) in
+	let Cint n = wexpr2bool [] (hw_destr n) in
+	let fp = fopen dot_file "w" then
+	(fprintf fp "digraph G {\n") fseq
+	(fprintf fp "node [shape=circle];\n") fseq
+	(fprintf fp "size = \"8.5,11.0\";\n") fseq
+	(fprintf fp "center = 1;\n") fseq
+	(fprintf fp "margin = 0.5;\n") fseq
+	(fprintf fp "ordering=out;\n") fseq
+	let rcnt = ref 0 then
+	let addr_done = ref [] then
+	letrec draw addr =
+	    (
+		let res = assoc addr (deref addr_done) then
+		res
+	    ) catch
+	    (
+		let get_ram_content ste time row =
+		    let nd_sz = hw_size {'0::node} in
+		    let ram_nm r = sprintf "i1/i6/ram[%d][%d:0]" r (nd_sz-1) in
+		    let nds = md_expand_vector (ram_nm row) then
+		    let vals = map (\nd. get_trace_val ste nd time) nds in
+		    let cnv HL =
+			HL == (T,F) => T |
+			HL == (F,T) => F |
+			eprintf "Non binary value (%B,%B) in row %d"
+				(fst HL) (snd HL) row
+		    in
+		    let i = bv2num (map cnv vals) then
+		    { ''i :: node}
+		in
+		let nd = get_ram_content ste time addr then
+		let tp = Ctp (nd-->type) then
+		let n = deref rcnt then
+		(rcnt := (n+1)) fseq
+		(addr_done := ((addr,n):(deref addr_done))) fseq
+		(
+		tp == (Ctp G_APPL) =>
+		(
+		    let l = draw (bv2num (Caddr (nd-->laddr))) then
+		    let r = draw (bv2num (Caddr (nd-->raddr))) then
+		    (fprintf fp "n%d [label = \"@\"];\n" n) fseq
+		    (fprintf fp "n%d -> n%d [style=solid, color=red];\n" n l)
+		    fseq
+		    (fprintf fp "n%d -> n%d [style=solid, color=black];\n" n r)
+		    fseq
+		    n
+		)
+		|
+		tp == (Ctp G_COMB) =>
+		(
+		    let Cc n = wexpr2bool [] (hw_destr n) in
+		    let c = Cc (nd-->comb) then
+		    let tp =
+			c = (Cc C_S) => "S" |
+			c = (Cc C_K) => "K" |
+			c = (Cc C_I) => "I" |
+			c = (Cc C_Y) => "Y" |
+			c = (Cc C_SPRIME) => "S'" |
+			c = (Cc C_C) => "C" |
+			c = (Cc C_CPRIME) => "C'" |
+			c = (Cc C_B) => "B" |
+			c = (Cc C_BSTAR) => "B*" |
+			c = (Cc C_BPRIME) => "B'" |
+			c = (Cc C_S1) => "S1" |
+			c = (Cc C_S2) => "S2" |
+			eprintf "Illegal combinator node"
+		    then
+		    (fprintf fp "n%d [label = \"%s\"];\n" n tp) fseq n
+		)
+		| tp == (Ctp G_PRIM) =>
+		(
+		    let Cp n = wexpr2bool [] (hw_destr n) in
+		    let p = Cp (nd-->prim) then
+		    let tp =
+			p = (Cp P_PLUS) => "+" |
+			p = (Cp P_MINUS) => "-" |
+			p = (Cp P_TIMES) => "*" |
+			p = (Cp P_DIVMOD) => "/%" |
+			p = (Cp P_EQ) => "==" |
+			p = (Cp P_NEQ) => "!=" |
+			p = (Cp P_GT) => ">" |
+			p = (Cp P_GEQ) => ">=" |
+			p = (Cp P_AND) => "&" |
+			p = (Cp P_OR) => "|" |
+			p = (Cp P_NOT) => "~" |
+			p = (Cp P_COND) => "ITE" |
+			eprintf "Illegal primitive function node"
+		    then
+		    (fprintf fp "n%d [label = \"%s\"];\n" n tp) fseq n
+		)
+		| tp == (Ctp G_INDIR) =>
+		(
+		    let l = draw (bv2num (Caddr (nd-->laddr))) then
+		    (fprintf fp "n%d [label = \"->\"];\n" n) fseq
+		    (fprintf fp "n%d -> n%d [style=solid, color=black];\n" n l)
+		    fseq
+		    n
+		)
+		| tp == (Ctp G_CONS) =>
+		(
+		    let l = draw (bv2num (Caddr (nd-->laddr))) then
+		    let r = draw (bv2num (Caddr (nd-->raddr))) then
+		    (fprintf fp "n%d [label = \":\"];\n" n) fseq
+		    (fprintf fp "n%d -> n%d [style=solid, color=black];\n" n l)
+		    fseq
+		    (fprintf fp "n%d -> n%d [style=solid, color=black];\n" n r)
+		    fseq
+		    n
+		)
+		| tp == (Ctp G_NIL) =>
+		(
+		    (fprintf fp "n%d [label = \"NIL\"];\n" n) fseq n
+		)
+		| tp == (Ctp G_INT) =>
+		(
+		    let i = bv2num (Cint (nd-->int)) then
+		    (fprintf fp "n%d [shape=box,label = \"%d\"];\n" n i) fseq
+		    let next = bv2num (Caddr (nd-->laddr)) then
+		    next = 0 => n |
+		    let l = draw next then
+		    (fprintf fp "n%d -> n%d [style=solid, color=black];\n" n l)
+		    fseq
+		    n
+		)
+		|
+		    eprintf "Illegal node type (%s)" (P_g_type (nd-->type))
+		)
+	    )
+	in
+	(((draw root_addr) fseq ()) gen_catch
+	(\msg.
+	    (str_is_substr "Non binary value " msg =>
+		fprintf stdout "\n--I-- %s\n" (hd (str_split msg "\n"))
+	    |
+		fprintf stderr "ERROR: %s\n" msg
+	    ) fseq
+	    let msg = sprintf "Not a valid graph at address %d at time %d"
+			      root_addr time
+	    in
+	    fprintf fp "n [shape=box,label=\"%s\"];\n" msg
+	)) fseq
+	(fprintf fp "\n}\n") fseq
+	(fclose fp)
+    in
+    let tmp_dir = mktempd "ram_graph" then
+    let dot_file = sprintf "%s/graph.dot" tmp_dir then
+    let ste = deref (vfsm2ste_r vis) then
+    let cur_time = deref (vfsm2cur_time_r vis) then
+    (RAM2dot ste root_addr cur_time dot_file) fseq
+    let w = tcl_eval [sprintf "display_dot %s {} fl_remove_ram_observer"
+			      dot_file]
+    then
+    (system (sprintf "/bin/rm -f %s" dot_file)) fseq
+    let display_fun ste time =
+	(RAM2dot ste root_addr time dot_file) fseq
+	(tcl_eval [sprintf "display_dot %s %s" dot_file w]) fseq
+	(system (sprintf "/bin/rm -f %s" dot_file)) fseq
+	()
+    in
+    let observer = add_observer vis display_fun then
+    (add_ram_observer w observer) fseq
+    ()
+;
+
+
+
+//load "zzzz.fl";
+
+// ========================================================================
+// A debugging session 
+// ========================================================================
+//add_waveform vis ["clk"];
+add_waveform vis ["i2/i1/state[5:0]"];
+
+add_waveform vis ["i2/is_comb"];
+add_waveform vis ["i2/i19/cur_comb[3:0]"];
+add_waveform vis ["i2/is_prim"];
+add_waveform vis ["i2/i19/cur_prim[3:0]"];
+add_waveform vis ["evaluation_done"];
+
+add_waveform vis ["i1/i6/ram[0][24:0]"];
+
+add_waveform vis ["i2/fetch"];
+
+draw_set_time vis (N-10);
+
+start_RAM_observer vis 52;
+
+
+//%%%%%%%%%%
+//
+//let print_duplicates hier l =
+//    let dups = map hd (filter (\l. length l > 1) (partition id l)) then
+//    dups = [] => () |
+//    let pref = list2str T "" "/" "/" (sprintf "i%d") (rev hier) in
+//    let pr dup = fprintf stderr "Node %s%s is duplicated\n" pref dup in
+//    foreach pr dups
+//;
+//
+//letrec check_pexlif hier (PINST n a l ints outs ints (P_HIER pl)) =
+//    (print_duplicates hier ints) fseq
+//    letrec check i (c:cs) = check_pexlif (i:hier) c
+//     /\    check i [] = ()
+//    in
+//    check 1 pl
+// /\    check_pexlif hier other = ()
+//;
+//
+//
+//let p = cephalopode 'clk 'reset 'cr 'between_jobs 'evaluation_done;
+//check_pexlif [] p;

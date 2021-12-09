@@ -1,0 +1,51 @@
+cload (DIR^"../types.fl");
+cload (DIR^"CR.fl");
+
+
+// A fair arbiter for two agents.
+let arbiter =
+    bit_input	clk reset.
+    bit_input	req0.
+    bit_input	req1.
+    bit_output	ack0.
+    bit_output	ack1.
+    //
+    bit_internal    only0 only1 both last.
+    CELL "draw_hier arbiter" [
+	only0 <- req0 '&' '~' req1,
+	only1 <- req1 '&' '~' req0,
+	both  <- req0 '&' req1,
+	STATE clk last [
+	    reset --- '0,
+	    only0 --- '0,
+	    only1 --- '1,
+	    both  --- '~' last
+	],
+	ack0 <- only0 '|' both '&' last,
+	ack1 <- only1 '|' both '&' '~' last
+];
+
+//let v = STE_debug (pexlif2fsm (arbiter 'clk 'reset 'req0 'req1 'ack0 'ack1));
+//
+//let ant = 
+//    let N = 40 in
+//    "clk" is_clock N
+//  and
+//    "reset" is "1" for 1 cycle otherwise "0" until N cycles
+//  and
+//    "req0" is	"1" in_cycle 3 followed_by
+//		"1" in_cycle 7 followed_by
+//		"1" in_cycle 10 followed_by
+//		"1" in_cycle 12 followed_by
+//		"1" in_cycle 13 followed_by
+//		"1" in_cycle 15 otherwise "0" until N cycles
+//  and
+//    "req1" is	"1" in_cycle 5 followed_by
+//		"1" in_cycle 7 followed_by
+//		"1" in_cycle 8 followed_by
+//		"1" in_cycle 12 followed_by
+//		"1" in_cycle 13 followed_by
+//		"1" in_cycle 14 otherwise "0" until N cycles
+//;
+//STE "-e" v [] ant [] [];
+

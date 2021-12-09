@@ -1,0 +1,33 @@
+let vis = get_current_vis ();
+add_waveform vis ["clk"];
+add_waveform vis ["reset"];
+add_waveform vis ["op_req"];
+add_waveform vis ["prims[3:0]"];
+add_waveform vis ["op_in[14:0]"];
+add_waveform vis ["op_ack"];
+add_waveform vis ["a2m_read"];
+add_waveform vis ["a2m_write"];
+add_waveform vis ["a2m_alloc"];
+add_waveform vis ["a2m_node[12:0]"];
+add_waveform vis ["a2m_node_type[2:0]"];
+add_waveform vis ["a2m_node_int[2:0]"];
+add_waveform vis ["a2m_node_laddr[4:0]"];
+add_waveform vis ["a2m_addr[4:0]"];
+add_waveform vis ["m2a_read"];
+add_waveform vis ["m2a_write"];
+add_waveform vis ["m2a_alloc"];
+add_waveform vis ["m2a_node[12:0]"];
+add_waveform vis ["m2a_node_type[2:0]"];
+add_waveform vis ["m2a_node_int[2:0]"];
+add_waveform vis ["m2a_node_laddr[4:0]"];
+add_waveform vis ["m2a_addr[4:0]"];
+add_waveform vis ["i1/now_module[2:0]"];
+add_waveform vis ["i1/i6/i1/mode[2:0]"];
+add_waveform vis ["i1/i6/i1/simple_step[3:0]"];
+add_waveform vis ["i1/i11/i1/i3/i1/state[2:0]"];
+let tab_1 = draw_fanin vis (0) 20 ["op_ack"];
+tab_1;
+let tab_2 = draw_inside vis 1 ["op_ack","arith2mem[20:0]"];
+tab_2;
+
+

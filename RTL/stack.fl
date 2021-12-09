@@ -1,0 +1,97 @@
+cload (DIR^"types.fl");
+
+STRUCT "stack" [("spine", "addr"), ("arg", "addr")];
+MEMORY "arg_stack" [(STACK_DEPTH, "addr")] "stack";
+
+let stack =
+    bit_input	    clk.
+    bit_input	    reset.
+    bit_input	    stack_push_req.
+    bit_input	    stack_pop_req.
+    bit_output	    stack_ack.
+    bit_output	    stack_fail.
+    addr_input	    spine_addr_in.
+    addr_input	    arg_addr_in.
+    addr_output	    spine_addr_out.
+    addr_output	    arg_addr_out.
+    bit_output	    empty_stack.
+    //
+    arg_stack_internal	stack_mem new_stack_mem.
+    eaddr_internal	ehd_ptr elast_ptr.
+    addr_internal	hd_ptr last_ptr.
+    stack_internal	data_to_push.
+    stack_internal	data_read.
+    //
+    CELL "draw_hier stack" [
+	empty_stack <- (ehd_ptr '=' '0),
+	stack_ack <- stack_push_req '|' (stack_pop_req '&' '~' empty_stack),
+	stack_fail <- (stack_pop_req '&' empty_stack) '|'
+		      (stack_push_req '&' (ehd_ptr '=' ''(STACK_DEPTH-1))),
+	STATE clk ehd_ptr [
+	    reset		--- '0,
+	    stack_push_req	--- (ehd_ptr '+' '1),
+	    stack_pop_req	--- (ehd_ptr '-' '1)
+	],
+	STATE clk elast_ptr [
+	    reset			--- '0,
+	    stack_push_req		--- ehd_ptr,
+	    stack_pop_req		--- (elast_ptr '-' '1)
+	],
+	hd_ptr <- eaddr2addr ehd_ptr,
+	last_ptr <- eaddr2addr elast_ptr,
+	data_to_push-->spine <- spine_addr_in,
+	data_to_push-->arg   <- arg_addr_in,
+        Write_arg_stack stack_mem hd_ptr data_to_push new_stack_mem,
+	re_ff_en clk stack_push_req new_stack_mem stack_mem,
+        Read_arg_stack stack_mem last_ptr data_read,
+	spine_addr_out <- data_read-->spine,
+	arg_addr_out <- data_read-->arg
+];
+
+//let p = stack 'clk 'reset 'stack_push_req 'stack_pop_req 'stack_ack 'spine_addr_in 'arg_addr_in 'spine_addr_out 'arg_addr_out;
+//
+//let ckt = pexlif2fsm p;
+//
+//let vis = STE_debug ckt;
+//
+//let N = 25;
+//
+//let ant =
+//    "clk" is_clock N
+//  and
+//    "reset" is 1 in_cycle 0 otherwise 0 until N cycles
+//  and
+//    "stack_push_req" is 1 in_cycle 6 followed_by
+//		        1 in_cycle 8 followed_by
+//		        1 in_cycle 18
+//		        otherwise 0 until N cycles
+//  and
+//    "spine_addr_in[4:0]" is "sa1[4:0]" in_cycle 6 followed_by
+//			    "sa2[4:0]" in_cycle 8 followed_by
+//			    "sa3[4:0]" in_cycle 18
+//  and
+//    "arg_addr_in[4:0]" is "aa1[4:0]" in_cycle 6 followed_by
+//			  "aa2[4:0]" in_cycle 8 followed_by
+//			  "aa3[4:0]" in_cycle 18
+//  and
+//    "stack_pop_req" is 1 in_cycle 10 followed_by
+//		       1 in_cycle 14 followed_by
+//		       1 in_cycle 20
+//		       otherwise 0 until N cycles
+//;
+//
+//STE "-e" vis [] ant [] [];
+//
+//add_waveform vis ["clk"];
+//add_waveform vis ["reset"];
+//add_waveform vis ["stack_push_req"];
+//add_waveform vis ["stack_pop_req"];
+//add_waveform vis ["spine_addr_in[4:0]"];
+//add_waveform vis ["arg_addr_in[4:0]"];
+//add_waveform vis ["stack_ack"];
+//add_waveform vis ["spine_addr_out[4:0]"];
+//add_waveform vis ["arg_addr_out[4:0]"];
+//add_waveform vis ["elast_ptr[5:0]"];
+//add_waveform vis ["ehd_ptr[5:0]"];
+//let tab_1 = draw_fanin vis (0) 20 ["stack_ack","spine_addr_out[4:0]","arg_addr_out[4:0]"];
+//tab_1;

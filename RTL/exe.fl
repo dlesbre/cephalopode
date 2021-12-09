@@ -1,0 +1,25 @@
+cload (DIR^"types.fl");
+
+// ====================================================================
+//  An extremely simplistic execution engine aimed at testing the 
+//  memory controller
+// ====================================================================
+
+let exe =
+    bit_input	    clk reset.
+    cr_inout	    cr.
+    // Read/Write interface
+    bit_output	    rw_req.
+    bit_input	    rw_ack.
+    bit_output	    rw.
+    addr_output	    rw_addr.
+    node_output	    wdata.
+    node_input	    rdata.
+    // Alloc interface
+    bit_output	    alloc_req.
+    bit_input	    alloc_ack.
+    addr_input	    alloc_addr.
+    CELL "draw_hfl EXE" [
+	
+];
+

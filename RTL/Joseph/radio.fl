@@ -1,0 +1,42 @@
+load "ste.fl";
+
+TYPE "cnt" 16;
+
+
+let counter =
+    bit_input clk reset.
+    cnt_input N.
+    //
+    bit_output out.
+    //
+    cnt_internal state.
+    //
+    CELL "draw_hier counter" [
+	STATE clk state [
+	    reset --- '0,
+	    (state '=' (N '-' '1)) --- '0,
+	    default --- (state '+' '1)
+	],
+	STATE clk out [
+	    reset --- '0,
+	    (state '=' (N '-' '1)) --- '~' out
+	]
+];
+
+
+
+let p = counter 'clk 'reset 'N 'out;
+
+let ckt = pexlif2fsm p;
+
+let vis = STE_debug ckt;
+
+let ant =
+	"clk" is_clock 100
+    and
+	"reset" is 1 in_cycle 0 otherwise 0 until 100 cycles
+    and
+	"N[15:0]" is 17 for 100 cycles
+;
+
+STE "-e" vis [] ant [] [];

@@ -1,0 +1,44 @@
+// divider unit recoded with jeremy's high level language
+
+cload (DIR^"../ALU-utils.fl");
+
+// 0b100... -> Int with msb only set
+let top_bit = {'0::Int}<--msb ? '1;
+
+// returns the largest power of 2 smaller then number
+let smallest_mask number =
+	letrec smallest_mask_rec ([]) prev = []
+	    /\ smallest_mask_rec (t:q) prev =
+		let next = smallest_mask_rec q (t '|' prev) in
+		((t '&' ('~' prev)):next) in
+	frombits (smallest_mask_rec (tobits number) ('0));
+
+cload (DIR^"div.prog.fl");
+
+let divider_main =
+	bit_input clk reset.
+	// Inputs
+	bit_input req.
+	op_input opcode.
+	// Outputs
+	bit_output ack zero_division_error.
+	addr_output addr_q addr_r.
+	// Signals
+	signal_input sig_in.
+	signal_output sig_out.
+	// Internals
+	bit_internal alloc_req read_req write_req.
+	bit_internal alloc_ack read_ack write_ack.
+	addr_internal alloc_addr read_addr write_addr.
+	node_internal read_node write_node.
+	CELL "draw_hier divider_main" [
+		divider clk reset req ack opcode zero_division_error addr_q addr_r
+			alloc_req alloc_ack alloc_addr
+			read_req read_ack read_addr read_node
+			write_req write_ack write_addr write_node,
+		memory_interface alloc_req read_req write_req
+			read_addr write_addr write_node
+			alloc_ack read_ack write_ack
+			alloc_addr read_node
+			sig_in sig_out
+	];

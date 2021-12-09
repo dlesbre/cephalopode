@@ -1,0 +1,27 @@
+cload (DIR^"../types.fl");
+
+let RAM =
+    bit_input	rw.
+    eaddr_input	addr.
+    node_input	inp.
+    node_output	out.
+    //
+    bit_internal    addr_rdy rw_rdy inp_rdy rd_rdy wr_rdy.
+    RAM_internal    ram tmp_new_ram new_ram.
+    internal	    local_rd_data.
+    CELL "draw_hier RAM" [
+	is_stable RAM_LATENCY addr addr_rdy,
+	is_stable RAM_LATENCY rw rw_rdy,
+	is_stable RAM_LATENCY inp inp_rdy,
+	rd_rdy <- addr_rdy '&' rw_rdy,
+	Read_RAM ram addr local_rd_data,
+	out <- (IF (rd_rdy '&' rw) THEN local_rd_data ELSE 'X),
+	Write_RAM ram addr inp tmp_new_ram,
+	wr_rdy <- rd_rdy '&' inp_rdy,
+	new_ram <- (IF (wr_rdy '&' '~' rw) THEN tmp_new_ram ELSE ram),
+	ram <: new_ram
+];
+
+
+//STE_debug (pexlif2fsm (RAM 'rw 'addr 'inp 'out));
+

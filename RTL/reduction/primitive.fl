@@ -1,0 +1,47 @@
+cload (DIR^"../ALU/main.fl");
+
+let prims_unit =
+    bit_input   clk reset.
+    // Interface with reduction engine
+    bit_input           do_op.
+    prims_input         op_type.
+    addr_input          redex_addr.
+    addr_list_input     arg_addrs.      // size = MAX_ARITY = 7
+    addr_list_input     alloc_addrs.    // size = MAX_ALLOCS = 7
+    bit_output          did_op.
+    node_output         new_redex_value.
+    bit_output          overwrite_redex.    // should the redex be overwritten
+                                            // with the above data?
+    node_list_output    alloc_datas.    //size = MAX_ALLOCS = 7 
+    // Interface with memory
+    signal_input    sig_in.
+    signal_output   sig_out.
+    // Internal wires
+    addr_internal   a_src_addr b_src_addr c_src_addr d_src_addr.
+    //
+    CELL "draw_hier primitive_unit" (
+        val (a_src_addr:b_src_addr:c_src_addr:d_src_addr:tl) = rev arg_addrs in
+        [
+            ALU clk reset
+                do_op op_type redex_addr
+		a_src_addr b_src_addr c_src_addr d_src_addr
+                did_op overwrite_redex new_redex_value
+                sig_in sig_out
+        ]
+    )
+;
+
+let dummy0 = ('a):('b):('c):('d):('e):('f):('g):('h):([]);
+let dummy1 = ('i):('j):('k):('l):('m):('n):('o):('p):([]);
+let dummy2 = ('q):('r):('s):('t):('u):('v):('w):('x):([]);
+
+let p = prims_unit 'clk 'reset 'do_op 'op_type 'redex_addr
+    dummy0 dummy1
+    'did_op 'new_redex_value 'overwrite_redex
+    dummy2
+    'sig_in 'sig_out;
+
+let ckt = pexlif2fsm p;
+
+
+let v = STE_debug ckt;

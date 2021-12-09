@@ -1,0 +1,240 @@
+cload (DIR^"../types.fl");
+
+ENUM "sch_slice_fsm" ["IDLE", "MONITORING", "READY", "ACTIVE"];
+
+let sch_slice =
+    bit_input           clk.
+    bit_input           reset.
+//    simple_Int_input	new_timeout.
+    ext_inps_input	new_mask.
+    addr_input		new_expr.
+    ext_inps_input	changed.
+//    simple_Int_input	current_time.
+    bit_input		done.
+    bit_input		abort.
+    bit_input		take_snapshot.
+    //
+    bit_input		write_i.
+    bit_input		sel_i.
+    bit_output		valid_gc_root_i.
+    addr_output		gc_root_i.
+    bit_output		rdy_i.
+    addr_output		root_i.
+    //
+    bit_internal	    valid.
+    ext_inps_internal	    mask rel_changes.
+    addr_internal	    expr.
+    sch_slice_fsm_internal  state.
+    bit_internal	    seen_change.
+    CELL "draw_hier sch_slice" [
+	valid <- '~' (is_IDLE state),
+	re_ff_en clk write_i new_mask mask,
+	re_ff_en clk write_i new_expr expr,
+	re_ff_en clk take_snapshot expr gc_root_i,
+	STATE clk valid_gc_root_i [
+	    reset --- '0,
+	    take_snapshot '&' valid --- '1
+	],
+	rel_changes <- changed '&' mask,
+	seen_change <- rel_changes '!=' '0,
+	Moore_FSM "sch_slice" clk state
+	    (reset --- IDLE)
+	    [
+		    IDLE        --- write_i	    --- MONITORING,
+		    MONITORING  --- seen_change	    --- READY,
+		    READY	--- sel_i	    --- ACTIVE,
+		    ACTIVE	--- abort	    --- READY,
+		    ACTIVE	--- done	    --- IDLE
+	    ],
+	rdy_i <- is_ACTIVE state,
+	root_i <- expr
+];
+
+
+//let p = sch_slice 'clk 'reset 'new_mask 'new_expr 'changed 'done 'abort
+//			'take_snapshot
+//		    'write_i 'sel_i 'valid_gc_root_i 'gc_root_i 'rdy_i 'root_i
+//;
+//STE_debug (pexlif2fsm p);
+
+
+letrec map6 fn (a:as) (b:bs) (c:cs) (d:ds) (e:es) (f:fs) =
+	(fn a b c d e f):(map6 fn as bs cs ds es fs)
+ /\    map6 fn [] [] [] [] [] [] = []
+ /\    map6 fn _  _  _  _  _  _  = error "Mismatch in list lengths in map6"
+;
+
+let sch_array =
+    bit_input           clk.
+    bit_input           reset.
+    ext_inps_input	mask.
+    addr_input		expr.
+    ext_inps_input	changed.
+    bit_input		done.
+    bit_input		abort.
+    bit_input		take_snapshot.
+    bit_list_input	writes.
+    bit_list_input	sels.
+    bit_list_output	valid_gc_roots.
+    bit_list_output	rdys.
+    addr_list_output	gc_roots.
+    addr_list_output	roots.
+    CELL "draw_hier sch_array" 
+	(map6 (sch_slice clk reset mask expr changed done abort take_snapshot)
+	      writes sels valid_gc_roots gc_roots rdys roots
+	)
+;
+
+STRUCT "find_first" [
+	("valid", "bit"),
+	("addr",  "sch_addr")
+];
+
+let mk_valid i = { '0 :: find_first }<--valid ? '1
+				     <--addr  ? ''(i % SCHEDULER_SIZE)
+;
+
+let mk_invalid = { '0 :: find_first }<--valid ? '0;
+
+let next_ready_fn start_addr valids =
+    letrec next i (v:vs) =
+	IF (''i '>' start_addr '&' v) THEN (mk_valid i) ELSE (next (i+1) vs)
+     /\    next i [] = mk_invalid
+    in
+    next 0 (rev (valids@valids))
+;
+
+let next_ready =
+    sch_addr_input	start_addr.
+    bit_list_input	rdys.
+    find_first_output	match.
+    CELL "draw_hier next_ready" [
+	match <- next_ready_fn start_addr rdys
+];
+
+
+ENUM "sch_fsm" ["IDLE", "SETUP", "EVAL"];
+
+TYPE "timer" 16;
+let max_time = {'100::timer};
+
+ENUM "sch_gc_fsm" ["GC_IDLE", "GC_PRE_MARK", "GC_INC",
+		   "GC_MARK_DONE", "GC_FINISH","GC_MARK"];
+
+let scheduler =
+    bit_input           clk.
+    bit_input           reset.
+    // Set-up function from reduction engine
+    bit_input		set_callback.
+    sch_addr_input	sch_addr.
+    ext_inps_input	mask.
+    addr_input		expr.
+    // External inputs
+    ext_inps_input	inps.
+    // Reduction engine interface
+    bit_output		jmp.
+    addr_output		jmp_addr.
+    bit_input		done.
+    // GC interface
+    bit_input		take_snapshot.
+    bit_input		mark_root_req.
+    bit_output		mark_root_ack.
+    bit_output		mark_req.
+    addr_output		mark_addr.
+    bit_input		mark_ack.
+    //
+    //
+    ext_inps_internal			prev_inps changed.
+    bit_list_internal SCHEDULER_SIZE	writes.
+    bit_list_internal SCHEDULER_SIZE	sels.
+    bit_list_internal SCHEDULER_SIZE	valid_gc_roots.
+    bit_list_internal SCHEDULER_SIZE	rdys.
+    addr_list_internal SCHEDULER_SIZE	gc_roots.
+    addr_list_internal SCHEDULER_SIZE	roots.
+    bit_internal			abort.
+    sch_fsm_internal			state.
+    sch_addr_internal			selected last_selected.
+    find_first_internal			match.
+    timer_internal			timeout.
+    bit_internal			one_rdy.
+    e_sch_addr_internal			e_gc_mark_cnt.
+    sch_addr_internal			gc_mark_cnt.
+    sch_gc_fsm_internal			gc_state.
+    bit_internal			valid_gc_root.
+    bit_internal			gc_done.
+    //
+    CELL "draw_hier scheduler" [
+	// Array of scheduler slices
+	sch_array clk reset mask expr changed done abort take_snapshot
+			writes sels valid_gc_roots rdys gc_roots roots,
+	// Setup logic
+	EN_DECODER_list set_callback sch_addr writes,
+	// Compute vector for inputs that has changed
+	re_ff clk inps prev_inps,
+	changed <- prev_inps '^' inps,
+	// Timeout logic
+	STATE clk timeout [
+	    (is_IDLE state '&' one_rdy) --- max_time,
+	    (timeout '>' '0)		--- (timeout '-' '1)
+	],
+	abort <- (timeout '=' '0),
+	// Arbiter: picks next ready (in a round-robin fashion)
+	next_ready last_selected rdys match,
+	one_rdy <- match-->valid,
+	selected <- match-->addr,
+	EN_DECODER_list (one_rdy '&' is_IDLE state) selected sels,
+	STATE clk last_selected [
+	    reset			--- '0,
+	    (is_IDLE state '&' one_rdy) --- selected
+	],
+	//
+	jmp <- is_SETUP state,
+	//
+	SELECT_list roots last_selected jmp_addr,
+	Moore_FSM "sch_fsm" clk state
+	    (reset --- IDLE)
+	    [
+		    IDLE        --- one_rdy	    --- SETUP,
+		    SETUP	--- default	    --- EVAL,
+		    EVAL	--- abort	    --- IDLE,
+		    EVAL	--- done	    --- IDLE
+	    ],
+	// GC logic
+	STATE clk e_gc_mark_cnt [
+	    reset --- '0,
+	    is_GC_IDLE gc_state --- '0,
+	    is_GC_INC gc_state --- (e_gc_mark_cnt '+' '1) 
+	],
+	gc_mark_cnt <- frombits (tl (tobits e_gc_mark_cnt)),
+	SELECT_list valid_gc_roots gc_mark_cnt valid_gc_root,
+	SELECT_list gc_roots gc_mark_cnt mark_addr,
+	gc_done <- e_gc_mark_cnt '=' ''SCHEDULER_SIZE,
+	Moore_FSM "sch_gc_fsm" clk gc_state 
+	    (reset --- GC_IDLE)
+	    [
+		GC_IDLE		--- mark_root_req	--- GC_PRE_MARK,
+		GC_PRE_MARK	--- gc_done		--- GC_FINISH,
+		GC_PRE_MARK	--- '~' valid_gc_root   --- GC_INC,
+		GC_PRE_MARK	--- default		--- GC_MARK,
+		GC_MARK		--- mark_ack		--- GC_MARK_DONE,
+		GC_MARK_DONE	--- '~' mark_ack	--- GC_INC,
+		GC_INC		--- default		--- GC_PRE_MARK,
+		GC_FINISH	--- '~' mark_root_req	--- GC_IDLE
+	    ],
+	    mark_root_ack <- is_GC_FINISH gc_state,
+	    mark_req <- is_GC_MARK gc_state
+];
+
+
+//let p = scheduler 'clk 'reset
+//		  'set_callback 'sch_addr 'mask 'expr
+//		  'inps
+//		  'jmp 'jmp_addr
+//		  'done
+//		  'take_snapshot 'mark_root_req 'mark_root_ack
+//		  'mark_req 'mark_addr 'mark_ack
+//;
+//let ckt = pexlif2fsm p;
+//STE_debug ckt;
+//
+

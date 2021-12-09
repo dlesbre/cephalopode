@@ -1,0 +1,430 @@
+cload (DIR^"../io/io-protocol.fl");
+
+
+// ================================================
+// § Memory circuit
+// ================================================
+0;
+
+
+// Used to simulate memory
+// Inputs:
+//   <ram_in (RAM)> initial state of the RAM
+//   <ram_max_addr (addr)> the last written address in ram_in.
+//                  all larger addresses are free to allocate
+//   <clk (bit)>    the clock
+//   <reset (bit)>  initialisez ram and ram_max_addr.
+//                  Should be 1 on first cycle and zero for all others
+//   <sig_in (signal)> the signal from the module to memory
+// Outputs:
+//   <sig_out (signal)> the memory response
+//
+// Usage: set ONLY one of sig_in-->read, sig_in-->write, sig_in-->alloc
+//   as REQ when all three of sig_out-->read, sig_out-->write, sig_out-->alloc are low.
+//    - for reading, specify address in sig_in-->addr
+//    - for writing, specify address in sig_in-->addr and node in sig_in-->node
+//   These values must be valid as long as REQ is high
+//
+//   ACK is when the corresponding signal to the REQ goes high.
+//    - for alloc, find the new address in sig_out-->addr
+//    - for read,  find the node in sig_out-->node
+//   They are valid as long as ACK is high.
+let ideal_memory ram_in ram_max_addr =
+	bit_input clk reset.
+	signal_input sig_in.
+	signal_output sig_out.
+
+	bit_internal do_alloc do_read do_write.
+	addr_internal sig_addr alloc_addr alloc_addr_prev.
+	eaddr_internal eaddr.
+	node_internal sig_node read_node.
+	signal_internal sig_in_prev sig_in_pprev.
+	RAM_internal ram ram_prev ram_written.
+	CELL "draw_hier ideal_memory" [
+		re_ff clk sig_in sig_in_prev,
+		re_ff clk sig_in_prev sig_in_pprev,
+		eaddr <- addr2eaddr '0 (sig_in_prev-->addr),
+		// Allocating is just incrementing a max address
+		re_ff clk alloc_addr alloc_addr_prev,
+		do_alloc <- sig_in_prev-->alloc '&' ('~' sig_in_pprev-->alloc),
+		CASE alloc_addr [
+			reset    --- ram_max_addr,
+			do_alloc --- (alloc_addr_prev '+' '1)
+		] alloc_addr_prev,
+		// Reading
+		do_read <- sig_in_prev-->read '&' ('~' sig_in_prev-->alloc),
+		Read_RAM ram eaddr read_node,
+		// Writing
+		do_write <- sig_in_prev-->write '&' ('~' (sig_in_prev-->alloc '|' sig_in_prev-->read)),
+		Write_RAM ram eaddr (sig_in_prev-->node) ram_written,
+		re_ff clk ram ram_prev,
+		CASE ram [
+			reset    --- ram_in,
+			do_write --- ram_written
+		] ram_prev,
+		// Making the signal
+		CASE sig_addr [
+			(sig_in_prev-->alloc) --- alloc_addr,
+			(sig_in_prev-->read)  --- (sig_in_prev-->addr),
+			(sig_in_prev-->write) --- (sig_in_prev-->addr)
+		] '0,
+		CASE sig_node [
+			do_read  --- read_node,
+			do_write --- (sig_in_prev-->node)
+		] '0,
+		sig_out <- (IF reset THEN '0 ELSE
+			'0<--alloc ? (sig_in_prev-->alloc)
+			  <--read  ? do_read
+			  <--write ? do_write
+			  <--node  ? sig_node
+			  <--addr  ? sig_addr)
+	];
+
+
+
+// Used to simulate memory. Unlike the previous one this
+// takes RAM as an antecedent rather than a constant, to allow
+// STE symbolic evaluation
+// Inputs:
+//   <clk (bit)>    the clock
+//   <reset (bit)>  initialisez ram and ram_max_addr.
+//                  Should be 1 on first cycle and zero for all others
+//   <ram_in (RAM)> initial state of the RAM
+//   <ram_max_addr (addr)> the last written address in ram_in.
+//                  all larger addresses are free to allocate
+//   <sig_in (signal)> the signal from the module to memory
+// Outputs:
+//   <sig_out (signal)> the memory response
+//   <ram (RAM)>    The current state of the RAM (for inspection)
+//
+// Usage: set ONLY one of sig_in-->read, sig_in-->write, sig_in-->alloc
+//   as REQ when all three of sig_out-->read, sig_out-->write, sig_out-->alloc are low.
+//    - for reading, specify address in sig_in-->addr
+//    - for writing, specify address in sig_in-->addr and node in sig_in-->node
+//   These values must be valid as long as REQ is high
+//
+//   ACK is when the corresponding signal to the REQ goes high.
+//    - for alloc, find the new address in sig_out-->addr
+//    - for read,  find the node in sig_out-->node
+//   They are valid as long as ACK is high.
+let ideal_memory2 =
+	bit_input clk reset.
+	RAM_input ram_in.
+	addr_input ram_max_addr.
+	signal_input sig_in.
+	signal_output sig_out.
+	RAM_output ram.
+
+	bit_internal do_alloc do_read do_write.
+	addr_internal sig_addr alloc_addr alloc_addr_prev.
+	eaddr_internal eaddr.
+	node_internal sig_node read_node.
+	signal_internal sig_in_prev sig_in_pprev.
+	RAM_internal ram_prev ram_written.
+	CELL "draw_hier ideal_memory" [
+		re_ff clk sig_in sig_in_prev,
+		re_ff clk sig_in_prev sig_in_pprev,
+		eaddr <- addr2eaddr '0 (sig_in_prev-->addr),
+		// Allocating is just incrementing a max address
+		re_ff clk alloc_addr alloc_addr_prev,
+		do_alloc <- sig_in_prev-->alloc '&' ('~' sig_in_pprev-->alloc),
+		CASE alloc_addr [
+			reset    --- ram_max_addr,
+			do_alloc --- (alloc_addr_prev '+' '1)
+		] alloc_addr_prev,
+		// Reading
+		do_read <- sig_in_prev-->read '&' ('~' sig_in_prev-->alloc),
+		Read_RAM ram eaddr read_node,
+		// Writing
+		do_write <- sig_in_prev-->write '&' ('~' (sig_in_prev-->alloc '|' sig_in_prev-->read)),
+		Write_RAM ram eaddr (sig_in_prev-->node) ram_written,
+		re_ff clk ram ram_prev,
+		CASE ram [
+			reset    --- ram_in,
+			do_write --- ram_written
+		] ram_prev,
+		// Making the signal
+		CASE sig_addr [
+			(sig_in_prev-->alloc) --- alloc_addr,
+			(sig_in_prev-->read)  --- (sig_in_prev-->addr),
+			(sig_in_prev-->write) --- (sig_in_prev-->addr)
+		] '0,
+		CASE sig_node [
+			do_read  --- read_node,
+			do_write --- (sig_in_prev-->node)
+		] '0,
+		sig_out <- (IF reset THEN '0 ELSE
+			'0<--alloc ? (sig_in_prev-->alloc)
+			  <--read  ? do_read
+			  <--write ? do_write
+			  <--node  ? sig_node
+			  <--addr  ? sig_addr)
+	];
+
+
+// ================================================
+// § RAM initialization
+// ================================================
+0;
+
+
+// Initializes a RAM from an (addr # int # addr) list, specified as fl ints
+// The first addr is the location of the node, the second is a pointer to the next node
+letrec mk_ram ([])  = {'ram::RAM}
+   /\  mk_ram (t:q) = val (addr_value,int_value,ptr) = t in
+		write_RAM (mk_ram q) (mk_eaddr addr_value) (mk_node_uInt int_value ptr);
+
+// Initializes a RAM antecedent. Inputs:
+//   <name (str)> the name of the RAM (e.g. "i1/ram")
+//   <steps (str)> the number of steps to set the RAM for
+//   <addr # value # addr (list)> same as for mk_ram, specifies int nodes
+//     (the first addr is it's location, the second is a pointer)
+letrec mk_ram_antecedent name steps ([])  = []
+   /\  mk_ram_antecedent name steps (t:q) =
+		val (addr_value, int_value, ptr) = t in
+		let desc = sprintf "%s[%d]" name addr_value in
+			(desc^"[14:9]") is (mk_aInt int_value) for steps cycles and
+			(desc^"[8:3]")  is (mk_addr ptr)       for steps cycles and
+			(desc^"[2:0]")  is G_INT               for steps cycles and
+			(mk_ram_antecedent name steps q);
+
+// Returns the minimal free address in a mk_ram input (for allocation)
+let min_free_addr mk_ram_input =
+	letrec runner [] = 1
+	    /\ runner ((t,_,_):q) = let m = runner q in t < m => m | t
+	in (runner mk_ram_input) + 1;
+
+// Example mk_ram input
+let ram_example = [
+	(0x01, 0x17, 0x00),
+	(0x02, 0x23, 0x00),
+	(0x03, 0x05, 0x02),
+	(0x04, 0x00, 0x00),
+	(0x05, 0x01, 0x00),
+	(0x06, 0x08, 0x01),
+	(0x07, 0x03, 0x00),
+	(0x08, 0x3f, 0x09),
+	(0x09, 0x00, 0x00),
+	(0x10, 0x0f, 0x00)
+];
+let free_addr = mk_addr (min_free_addr ram_example);
+let ram = mk_ram ram_example;
+
+
+// // TESTS
+// let ideal_memory_pexlif = ideal_memory ram free_addr 'clk 'reset 'sig_in 'sig_out;
+// let ideal_memory_fsm    = pexlif2fsm ideal_memory_pexlif;
+// let ideal_memory_vis    = STE_debug ideal_memory_fsm;
+// let ideal_memory_fanim  = draw_fanin ideal_memory_vis (0) 100 ["sig_out[23:0]"];
+//
+// add_waveform ideal_memory_vis ["sig_in[23:0]","sig_out[23:0]",
+// 	"sig_in[23]", "sig_in[22]", "sig_in[21]", "sig_in[20:6]", "sig_in[5:0]",
+// 	"sig_out[23]", "sig_out[22]", "sig_out[21]", "sig_out[20:6]", "sig_out[5:0]"
+// ];
+// // signal generators
+// let sig_null = {'0::signal};
+// let sig_alloc = '0<--alloc ? '1;
+// let sig_read read_addr =
+// 	'0<--read ? '1
+// 	  <--addr ? read_addr;
+// let sig_write write_addr write_node =
+// 	'0<-- write ? '1
+// 	  <-- node  ? write_node
+// 	  <-- addr  ? write_addr;
+// // Pads sequence with nulls
+// let signal_sequence l =
+// 	letrec seq_ ([])  = []
+// 	    /\ seq_ (t:q) = sig_null:t:(seq_ q) in
+// 	sequence 3 (seq_ l);
+// let ideal_memory_test_inputs = "clk" is_clock 100
+// 	and "reset" is 1 for 1 cycles followed_by 0 for 99 cycles
+// 	and "sig_in[23:0]" is signal_sequence [
+// 		sig_alloc, sig_alloc,
+// 		sig_read '1, sig_read '2,
+// 		sig_write '1 '0x25, sig_read '1,
+// 		sig_alloc, sig_write '5 '0x13, sig_read '5
+// 	];
+// STE "-e" ideal_memory_vis [] ideal_memory_test_inputs [] [];
+// ideal_memory_fanim;
+
+
+// ================================================
+// § Debug helper functions
+// ================================================
+0;
+
+// The ith bit of n
+let ith_bit n i = (n / 2**i) % 2; // I can't find bitwise and...
+
+// Int chunk's MSB
+let TOP_BIT_POS = INT_SZ - 1;
+
+// size of integer chunks used
+clet chunk_size = 2**INT_SZ;
+
+// sets the sign of a number according to its depth (number of chunks)
+let set_sign number depth =
+	let two_complement = INT_SZ * depth in
+	//printf "== %x %d ==\n" two_complement depth fseq
+	(ith_bit number (two_complement - 1)) = 1
+		=> number - 2**two_complement
+		|  number;
+
+// Reads the input of mk_ram and converts it to an fl integer
+let get_number ram addr =
+	letrec rget_number 0x0  partial = (0, 0)
+	    /\ rget_number addr ([])    = (0, 0) // 0 if undefined address
+	    /\ rget_number addr ((caddr, int_val, ptr):q) =
+				caddr = addr
+					=> val (number, depth) = rget_number ptr ram in
+					   (int_val + chunk_size*number, depth+1)
+					|  (rget_number addr q)
+	in val (number, depth) = rget_number addr ram in
+	set_sign number depth;
+
+// Create an int from a sequence of (unsigned) chunks
+let int_from_chunks chunks =
+	letrec int_from_chunks_rec [] = (0,0)
+	    /\ int_from_chunks_rec (t:q) =
+			val (nb,depth) = int_from_chunks_rec q in
+			(0 <= t AND t < chunk_size)
+				=> (t+chunk_size*nb, depth+1)
+				|  eprintf "Specified chunk not in valid range: %d not in [0, %d]" t (chunk_size-1)
+	in val (nb, depth) = int_from_chunks_rec chunks in
+	set_sign nb depth;
+
+// Size of a positive integer in chunks
+letrec nb_chunk_size 0 = 0
+    /\ nb_chunk_size x =
+		(x < chunk_size)
+			=> (x / (chunk_size/2) != 0) => 2 | 1
+			| 1 + (nb_chunk_size (x/chunk_size));
+
+// true representation of a negative number
+let get_neg_repr x =
+	let n = nb_chunk_size (-x) in
+  chunk_size**n + x;
+
+// Splits an fl int in correct size chunks
+let split_in_chunks number =
+	letrec split_in_chunks_rec x no_lead_zero=
+		let next = x / chunk_size in
+		let chunk = x % chunk_size in
+		let topbit = ith_bit x TOP_BIT_POS in
+		let cond = (next = 0) AND ((topbit = 0) OR no_lead_zero) in
+		cond
+			=> [chunk]
+			|  chunk:(split_in_chunks_rec next no_lead_zero) in
+	(number < 0)
+		=> split_in_chunks_rec (get_neg_repr number) T
+		|  split_in_chunks_rec number F;
+
+// Generate an input to mk_ram from a list of fl ints
+// Such that the first int starts at address start_addr,
+// the second at address start_addr+1 and so on.
+let ram_from_ints start_addr ints =
+	let split_list = map split_in_chunks ints in
+	letrec generate max_addr ([]) = []
+	  /\   generate max_addr ((chunk:[]):q) =
+			(max_addr, chunk, 0):(generate (max_addr+1) q)
+	  /\   generate max_addr ((chunk:rest):q) =
+			(max_addr, chunk, max_addr+(length q)+1):(generate (max_addr+1) (q@[rest]))
+	in generate start_addr split_list;
+
+// Prints an integer separated in chunks as it would be in the RAM
+// Returns a string formatted as
+// (<+/->) <0x chunk_1> -> ... -> <0x chunk_n> (<decimal full number>)
+let sprint_number number =
+	letrec join sep ([]) = ""
+	    /\ join sep (t:[]) = sprintf "0x%02x" t
+	    /\ join sep (t:q) = (sprintf "0x%02x" t)^sep^(join sep q) in
+	let repr = join " -> " (split_in_chunks number) in
+	(number < 0)
+		=> sprintf "(-) %s (%d)" repr number
+		|  sprintf "(+) %s (%d)" repr number;
+
+
+// let ints = [1,2,3,63,64,128,-1,-2,-68];
+// let test_ram = ram_from_ints 1 ints;
+// let f x = get_number test_ram x;
+
+
+// ================================================
+// § STE simulation useful functions
+// ================================================
+
+// Returns the number made from arranging the bits of integer according to the range list
+// i.e. bit_range I [5,4,3] returns I[5]*(2^2) + I[4]*(2^1) + I[3]*(2^0)
+let bit_range integer range =
+	letrec bit_range_rec integer ([]) calc  = calc
+	    /\ bit_range_rec integer (t:q) calc =
+			let bit = (ith_bit integer t) in
+			bit_range_rec integer q (calc*2 + bit)
+	in bit_range_rec integer range 0;
+
+// The int contained in a node
+let node_int node = bit_range node int_range;
+// The next address in a node
+let node_laddr node = bit_range node laddr_range;
+// The type of a node
+let node_type node = bit_range node g_type_range;
+
+// Returns the last step where bit went high.
+// Arguments:
+//  - <ste (ste)>  the simulation result
+//  - <bit (string)> the name of the bit inspected (ex "i1/done")
+let last_high ste bit =
+	letrec find_true ([]) = -1
+	    /\ find_true ((step,T,F):q) = step
+	    /\ find_true (t:q) = find_true q
+	in find_true (get_trace ste bit);
+
+// returns the value calculated by STE at the  given step
+// fails if this value is undefined
+// Arguments:
+//  - <ste (ste)>  the simulation result
+//  - <value_name (string)> the name of the ram (i.e. "my_bit", "i1/my_int[5:0]")
+//  - <step (int)> the step to query
+let get_ste_value ste value_name step =
+	let len = (strlen value_name) + 3 in
+	let full_string = hd (base_get_complete_value ste [value_name] step) in
+	let sub_string = (substr full_string len (-1)) in
+	s2int sub_string;
+
+// returns the value in address addr at the given step
+// fails if this value is undefined
+// Arguments:
+//  - <ste (ste)>  the simulation result
+//  - <ram_name (string)> the name of the ram (i.e. "i2/ram")
+//  - <step (int)> the step to query
+//  - <addr (int)> the address to query
+let get_ram_value ste ram_name step addr =
+	let ram_desc = sprintf "%s[%d][14:0]" ram_name addr in
+	get_ste_value ste ram_desc step;
+
+// Returns the full integer that starts at address addr in the ram
+// Arguments:
+//  - <ste (ste)>  the simulation result
+//  - <ram_name (string)> the name of the ram (i.e. "i2/ram")
+//  - <step (int)> the step to query
+//  - <addr (int)> the address to query
+let get_ram_number ste ram_name step addr0 =
+	letrec number_runner 0 visited = (0,0)
+	    /\ number_runner addr visited =
+		(elem addr visited) =>
+			eprintf "get_ram_number - circular addressing %s"
+			(list2str T "" " <- " "" (\x. sprintf "0x%02x" x) visited)
+		|
+		let node = get_ram_value ste ram_name step addr in
+		let number = node_int node in
+		let laddr  = node_laddr node in
+		let type   = node_type node in
+		(type != 4)
+			=> eprintf "get_ram_number - the node at addr 0x%02x (from 0x%02x) is not of type G_INT\n(int = 0x%x, laddr = 0x%x, type = 0x%x)\n"
+			   addr addr0 number laddr type
+			|
+		val (next, depth) = number_runner laddr (addr:visited) in
+		(number + chunk_size*next, depth + 1) in
+	val (number, depth) = number_runner addr0 [] in
+	(depth = 0) => eprintf "get_ram_number - zero depth int at addr 0x%02x\n" addr0
+	            |  set_sign number depth;

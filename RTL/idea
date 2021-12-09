@@ -1,0 +1,31 @@
+
+GC_Stages: "IDLE", "INIT_MARK", "MARK", "SWEEP", "ACQUIRE", "SWITCH
+
+
+IDLE:
+    Do nothing
+
+
+
+IDLE --> INIT_MARK when
+	"enough garbage to collect"
+	&& nothing currently being written to main memory
+
+
+INIT_MARK:
+	x <- root
+	
+
+
+INIT_MARK --> MARK when TRUE
+
+
+MARK:
+	c <- read_from_memory(x)
+	if( IS_MARKED(c) ) {
+	    if( stack_empty ) { transition_to SWEEP; }
+	    x <- POP()
+	} else {
+	    MARK(c);
+	    write .....
+	}

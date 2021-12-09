@@ -1,0 +1,138 @@
+load "ste.fl";
+
+ENUM "four_phase" ["IDLE", "REQ", "ACK", "DONE"];
+let rd_protocol_ifc =
+    bit_input		clk.
+    bit_input		start.
+    bit_input		ack.
+    input		din.
+    bit_output		req.
+    bit_output		done.
+    output		dout.
+    four_phase_internal state.
+    bit_internal	reset.
+    CELL "draw_hier rd_ifc_fsm" [
+	reset <- '~' start,
+	req <- is_REQ state,
+	Moore_FSM "ifc" clk state (reset --- IDLE) [
+		IDLE	--- start   --- REQ,
+		REQ	--- ack	    --- ACK,
+		ACK	--- '~' ack ---	DONE
+	],
+	re_ff_en clk (is_REQ state '&' ack) din dout,
+	done <- is_DONE state
+];
+
+let wr_protocol_ifc =
+    bit_input		clk.
+    bit_input		start.
+    bit_input		ack.
+    input		din.
+    bit_output		req.
+    bit_output		done.
+    output		dout.
+    four_phase_internal state.
+    bit_internal	reset.
+    CELL "draw_hier wr_ifc_fsm" [
+	reset <- '~' start,
+	req <- is_REQ state,
+	Moore_FSM "ifc" clk state (reset --- IDLE) [
+		IDLE	--- start   --- REQ,
+		REQ	--- ack	    --- ACK,
+		ACK	--- '~' ack ---	DONE
+	],
+	re_ff_en clk req din dout,
+	done <- is_DONE state
+];
+
+ENUM "process" ["IDLE", "READ_A", "READ_B", "COMP", "WRITE_RES"];
+TYPE "byte" 8;
+TYPE "data" 8;
+TYPE "addr" 16;
+ENUM "opcode" ["OP_ADD", "OP_SUB"];
+STRUCT "op" [
+	("opcode",  "opcode"),
+	("dest",    "addr"),
+	("src1",    "addr"),
+	("src2",    "addr")
+];
+
+let test =
+    bit_input		clk reset do_op.
+    op_input		op_in.
+    addr_output		addr.
+    data_input		din.
+    data_output		dout.
+    bit_output		mem_req rw.
+    bit_input		mem_ack.
+    //
+    internal	r1 r2 r top_fsm op.
+    internal	read_a_done read_b_done write_done rdA_req rdB_req wr_req.
+    CELL "test" [
+    re_ff_en clk do_op op_in op,
+    Moore_FSM "comp" clk top_fsm (reset --- IDLE) [
+	IDLE	--- do_op ---		READ_A,
+	READ_A  --- read_a_done ---	READ_B,
+	READ_B  --- read_b_done ---	COMP,
+	COMP	--- default ---		WRITE_RES,
+	WRITE_RES --- write_done ---	IDLE
+    ],
+    rd_protocol_ifc clk (is_READ_A top_fsm) mem_ack din rdA_req read_a_done r1,
+    rd_protocol_ifc clk (is_READ_B top_fsm) mem_ack din rdB_req read_b_done r2,
+    wr_protocol_ifc clk (is_WRITE_RES top_fsm) mem_ack r wr_req write_done dout,
+    mem_req <- rdA_req '|' rdB_req '|' wr_req,
+    CASE addr [
+	is_READ_A top_fsm --- op-->src1,
+	is_READ_B top_fsm --- op-->src2,
+	is_WRITE_RES top_fsm --- op-->dest
+	] 'X,
+    rw <- '~' wr_req,
+    CASE r [
+	is_OP_ADD (op-->opcode) --- (r1 '+' r2),
+	is_OP_SUB (op-->opcode) --- (r1 '-' r2)
+	] 'X
+];
+
+let p = test 'clk 'reset 'do_op 'op_in 'addr 'din 'dout 'mem_req 'rw 'mem_ack;
+let ckt = pexlif2fsm p;
+let v = STE_debug ckt;
+
+//v;
+
+let mk_op op dst s1 s2 =
+    let op = '0<--opcode ? op
+	       <--dest ? dst
+	       <--src1 ? s1
+	       <--src2 ? s2
+    then
+    let bl = wexpr2bool [] (hw_destr op) then
+    bl
+;
+
+
+let ant =
+    "clk" is_clock 50
+  and
+    "reset" is "1" in_cycle 0 followed_by "0" for 49 cycles
+  and
+    "do_op" is "1" in_cycle 4 followed_by
+	       "1" in_cycle 30
+	      otherwise "0" until 50 cycles
+  and
+    "op_in[48:0]" is (mk_op OP_ADD '3 '0 '1) in_cycle 4 followed_by
+		  (mk_op OP_SUB '0 '3 '1) in_cycle 30
+  and
+    "din[7:0]" is "b[7:0]" in_cycle 7 followed_by
+		  "0x1f" in_cycle 12 followed_by
+		  "0xff" in_cycle 32 followed_by
+		  "0xa4" in_cycle 34
+  and
+    "mem_ack" is "1" in_cycle 7 followed_by
+		 "1" in_cycle 12 followed_by
+		 "1" in_cycle 18 followed_by
+		 "1" in_cycle 32 followed_by
+		 "1" in_cycle 34 
+	      otherwise "0" until 50 cycles
+;
+STE "-e" v [] ant [] [];
+

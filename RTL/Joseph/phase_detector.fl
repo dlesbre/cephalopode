@@ -1,0 +1,100 @@
+load "ste.fl";
+
+let free_oscillator =
+    bit_input	reset.
+    bit_output	fclk.
+    CELL "draw_hier free_oscillator" [
+	fclk <: '~' reset '&' '~' fclk
+];
+
+let p = free_oscillator 'reset 'fclk;
+let ckt = pexlif2fsm p;
+let vis = STE_debug ckt;
+STE "-e" vis [] ("reset" is 1 for 1 cycle otherwise 0 until 100 cycles) [] [];
+
+
+TYPE "cnt" 8;
+
+
+let scycle cnt = 20*cnt;
+postfix scycle;
+let scycles cnt = 20*cnt;
+postfix scycles;
+
+let my_bdd_is_clock nd cycs =
+    map (\i. T, nd, (i%2=0), 10*i, 10*(i+1)) (0--(2*cycs-1));
+
+// A simple interface for defining 5-tuple lists for (b)STE runs.
+// Define a node nd to be a clock and generate cycs cycles of values.
+// Usage: nd is_clock cycs;
+let is_sclock = my_bdd_is_clock;
+infix 2 is_sclock;
+
+
+let phase_detector =
+    bit_input	    clk.	    // System clock
+    bit_input	    reset.	    // System reset
+    bit_input	    f_ref.
+    bit_input	    f_fbk.
+    cnt_output	    phase_difference.
+    //
+    bit_internal    start fclk.
+    cnt_internal    cnt.
+    CELL "draw_hier phase_detector" [
+	free_oscillator reset fclk,
+	start <- '~' f_ref '&' '~' f_fbk,
+	STATE fclk cnt [
+	    start --- '0,
+	    (f_ref '&' '~' f_fbk) --- (cnt '+' '1),
+	    ('~' f_ref '&' f_fbk) --- (cnt '-' '1)
+	],
+	STATE clk phase_difference [
+	    (f_ref '&' f_fbk) --- cnt
+	]
+];
+
+
+let my_f_ref_clk nd cycs offset =
+    map (\i. T, nd, (i%2=0), 50*i+offset, 50*(i+1)+offset) (0--(2*cycs-1));
+
+
+let p = phase_detector 'clk 'reset 'f_ref 'f_fbk 'phase_difference;
+let ckt = pexlif2fsm p;
+let vis = STE_debug ckt;
+
+let ant =
+    "clk" is_sclock 20
+  and
+    "reset" is 1 for 1 scycles otherwise 0 until 20 scycles
+  and
+    (my_f_ref_clk "f_ref" 3 10)
+  and
+    (my_f_ref_clk "f_fbk" 3 20)
+;
+    
+STE "-e" vis [] ant [] [];
+
+
+
+
+
+
+
+
+
+
+
+
+
+//                     v      v
+//
+//                            +-------------------------------
+//                            |
+//                            |
+//----------------------------+
+//
+//
+//                    +-------------------------------
+//                     |
+//                     |
+//---------------------+

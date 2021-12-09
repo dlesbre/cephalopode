@@ -1,0 +1,418 @@
+// Arithmetic operations
+// done & proved:
+// done: Addition, Substration
+// todo: Multiplication, Division/Modulo
+
+cload (DIR^"../ALU-utils.fl");
+cload (DIR^"add-sub.fl");
+cload (DIR^"mul.fl");
+cload (DIR^"div.fl");
+cload (DIR^"../clean/clean.fl");
+
+ENUM "arith_process" ["IDLE", "OP", "CLEAN", "DIV_CLEAN_1", "DIV_CLEAN_2", "CLEAN_WAIT", "DONE"];
+
+ENUM "arith_module" ["ADDSUB", "MUL", "DIVMOD", "CLEAN", "DIV_CLEAN_1", "DIV_CLEAN_2", "NOOP"];
+
+ENUM "arith_prims" [ "AP_PLUS", "AP_MINUS", "AP_TIMES", "AP_DIVMOD" ];
+
+// Any of the cleaning modules
+let is_any_CLEAN now_module =
+    (is_CLEAN now_module) '|' (is_DIV_CLEAN_1 now_module) '|' (is_DIV_CLEAN_2 now_module);
+
+let arith_manager =
+    bit_input   clk reset.
+    //
+    bit_input   op_req.
+    arith_prims_input op_type.
+    bit_output  op_ack.
+    //
+    bit_input           addsub_done mul_done divmod_done clean_done.
+    bit_input           zero_division_error.
+    arith_module_output now_module.
+    // Raised when operation is twisted (ex selects SUB instead of ADD subtraction)
+    bit_output          twist.
+    // Internal wires
+    bit_internal            op_done.
+    arith_process_internal  step.
+    //
+    CELL "draw_hier arith_manager" [
+        // Special clean states for the divider as it requires cleaning 2 numbers
+        Moore_FSM "manager" clk step (reset --- IDLE) [
+            IDLE    ---     op_req  --- OP,
+            OP      --- op_done '&' ('~'(is_AP_DIVMOD op_type)) --- CLEAN,
+            OP      --- op_done '&' (is_AP_DIVMOD op_type) '&' zero_division_error --- DONE,
+            OP      --- op_done '&' (is_AP_DIVMOD op_type) '&' ('~' zero_division_error) --- DIV_CLEAN_1,
+            CLEAN   --- clean_done  --- DONE,
+            DIV_CLEAN_1 --- clean_done  --- CLEAN_WAIT,
+            CLEAN_WAIT --- ('~' clean_done) --- DIV_CLEAN_2,
+            DIV_CLEAN_2 --- clean_done --- DONE,
+            DONE    --- '~' op_req  --- IDLE
+        ],
+        CASE op_done [
+            is_AP_PLUS   op_type --- addsub_done,
+            is_AP_MINUS  op_type --- addsub_done,
+            is_AP_TIMES  op_type --- mul_done,
+            is_AP_DIVMOD op_type --- divmod_done
+        ] '0,
+        CASE now_module [
+            is_CLEAN step       --- CLEAN,
+            is_DIV_CLEAN_1 step --- DIV_CLEAN_1,
+            is_DIV_CLEAN_2 step --- DIV_CLEAN_2,
+            '~' (is_OP step)    --- NOOP,
+            is_AP_PLUS   op_type --- ADDSUB,
+            is_AP_MINUS  op_type --- ADDSUB,
+            is_AP_TIMES  op_type --- MUL,
+            is_AP_DIVMOD op_type --- DIVMOD
+        ] 'X,
+        twist <- (is_AP_MINUS op_type),
+        op_ack <- is_DONE step
+    ]
+;
+
+let p_manager   = arith_manager 'clk 'reset 'op_req 'op_type 'op_ack 'addsub_done 'mul_done 'divmod_done 'clean_done 'zero_division_error 'now_module 'twist;
+
+let ckt_manager = pexlif2fsm p_manager;
+
+
+let v_manager   = STE_debug ckt_manager;
+
+let signal_interfacer =
+    bit_input           clk reset.
+    arith_module_input  now_module.
+    // Interface with memory
+    signal_input    sig_in.
+    signal_output   sig_out.
+    // Interface with arith modules
+    signal_output   addsub_sig_in.
+    signal_input    addsub_sig_out.
+    signal_output   mul_sig_in.
+    signal_input    mul_sig_out.
+    signal_output   divmod_sig_in.
+    signal_input    divmod_sig_out.
+    signal_output   clean_sig_in.
+    signal_input    clean_sig_out.
+    // Internal
+    signal_internal my_sig_in.
+    //
+    CELL "draw_hier signal_interfacer" [
+        // Signal in
+        my_sig_in <- (IF reset THEN '0 ELSE sig_in),
+        addsub_sig_in   <- (IF is_ADDSUB    now_module THEN my_sig_in ELSE '0),
+        mul_sig_in      <- (IF is_MUL       now_module THEN my_sig_in ELSE '0),
+        divmod_sig_in   <- (IF is_DIVMOD    now_module THEN my_sig_in ELSE '0),
+        clean_sig_in    <- (IF is_any_CLEAN now_module THEN my_sig_in ELSE '0),
+        // Signal out
+        CASE sig_out [
+            is_ADDSUB    now_module  --- addsub_sig_out,
+            is_MUL       now_module  --- mul_sig_out,
+            is_DIVMOD    now_module  --- divmod_sig_out,
+            is_any_CLEAN now_module  --- clean_sig_out
+        ] '0
+    ]
+;
+
+let arith =
+    bit_input   clk reset.
+    // Interface with reduction engine
+    bit_input           op_req.
+    arith_prims_input   op_type_in.
+    op_input            op_in_in.
+    bit_output          op_ack.
+    // Interface with memory
+    signal_input    sig_in.
+    signal_output   sig_out.
+    // -- Internal wires
+    bit_internal            addsub_done mul_done divmod_done clean_done.
+    signal_internal         addsub_sig_in addsub_sig_out.
+    signal_internal         mul_sig_in mul_sig_out.
+    signal_internal         divmod_sig_in divmod_sig_out.
+    signal_internal         clean_sig_in clean_sig_out.
+    arith_module_internal   now_module.
+    bit_internal            twist.
+    bit_internal            divmod_zero_div.
+    arith_prims_internal    op_type op_type_stored.
+    op_internal             op_in op_in_stored.
+    addr_internal           div_q div_r addr_clean.
+    //
+    CELL "draw_hier arith_unit" [
+        // Storing data
+        re_ff_en clk op_req op_type_in op_type_stored,
+        op_type <- (IF op_req THEN op_type_in ELSE op_type_stored),
+        re_ff_en clk op_req op_in_in op_in_stored,
+        op_in <- (IF op_req THEN op_in_in ELSE op_in_stored),
+        // Manager first
+        arith_manager clk reset
+            op_req op_type op_ack
+            addsub_done mul_done divmod_done clean_done divmod_zero_div now_module twist,
+        // -- Arith ops
+        // Addition / Subtraction
+        addsub clk reset
+            (is_ADDSUB now_module) ('~' twist) op_in addsub_done
+            addsub_sig_in addsub_sig_out,
+        // Multiplication
+        muliplier_main clk reset
+            (is_MUL now_module) op_in mul_done
+            mul_sig_in mul_sig_out,
+        // Division / Modulo
+        divider_main clk reset
+            (is_DIVMOD now_module) op_in divmod_done divmod_zero_div div_q div_r
+            divmod_sig_in divmod_sig_out,
+        // -- Clean
+        CASE addr_clean [
+            is_DIV_CLEAN_1 now_module --- div_q,
+            is_DIV_CLEAN_2 now_module --- div_r
+        ] (op_in-->dest),
+        clean clk reset
+            (is_any_CLEAN now_module)
+            addr_clean clean_done
+            clean_sig_in clean_sig_out,
+        // Signal interfacer
+        signal_interfacer clk reset
+            now_module
+            sig_in sig_out
+            addsub_sig_in addsub_sig_out
+            mul_sig_in mul_sig_out
+            divmod_sig_in divmod_sig_out
+            clean_sig_in clean_sig_out
+    ]
+;
+
+let p   = arith 'clk 'reset 'op_req 'op_type_in 'op_in_in 'op_ack 'sig_in 'sig_out;
+
+let ckt = pexlif2fsm p;
+
+
+let v   = STE_debug ckt;
+
+///////////
+// TESTS //
+///////////
+//
+//let add_Int a b =
+//    let c = '0<--simple_Int ? (a-->simple_Int '+' b-->simple_Int) in
+//    c
+//;
+//
+//ENUM "rw_process"
+//    ["IDLE", "READ", "WRITE", "WDONE", "RDONE"]
+//;
+//
+//ENUM "alloc_process"
+//    ["IDLE", "ALLOC", "DONE"]
+//;
+//
+//let test_memory =
+//    bit_input       clk reset.
+//    signal_input    arith2mem.
+//    signal_output   mem2arith.
+//    // Internal wires
+//    rw_process_internal     rw_step.
+//    alloc_process_internal  alloc_step.
+//    bit_internal            read_done write_done alloc_done.
+//    addr_internal           next_alloc_addr out_addr.
+//    node_internal           out_node.
+//    node_internal           cell0 cell1 cell2 cell3 cell4 cell5 cell6 cell7
+//                            cell8 cell9 cell10 cell11 cell12 cell13 cell14
+//                            cell15 cell16 cell17 cell18 cell19 cell20.
+//    node_internal           selected_cell.
+//    Int_internal            alloc_counter next_alloc_counter.
+//    //
+//    CELL "draw_hier test_memory" [
+//        Moore_FSM "rw_manager" clk rw_step (reset --- IDLE) [
+//            IDLE    --- arith2mem-->write   --- WRITE,
+//                WRITE   --- write_done              --- WDONE,
+//                WDONE   --- '~' arith2mem-->write   --- IDLE,
+//            IDLE    --- arith2mem-->read    --- READ,
+//                READ    --- read_done               --- RDONE,
+//                RDONE   --- '~' arith2mem-->read    --- IDLE
+//        ],
+//        re_ff clk (is_WRITE rw_step) write_done,
+//        re_ff clk (is_READ rw_step) read_done,
+//        Moore_FSM "alloc_manager" clk alloc_step (reset --- IDLE) [
+//            IDLE    ---     arith2mem-->alloc   --- ALLOC,
+//            ALLOC   --- alloc_done              --- DONE,
+//            DONE    --- '~' arith2mem-->alloc   --- IDLE
+//        ],
+//        re_ff clk (is_ALLOC alloc_step) alloc_done,
+//        mem2arith <- '0<--alloc ? (is_DONE alloc_step)
+//                       <--read  ? (is_RDONE rw_step)
+//                       <--write ? (is_WDONE rw_step)
+//                       <--addr  ? out_addr
+//                       <--node  ? out_node,
+//        // Alloc
+//        out_addr <- (IF (is_DONE alloc_step) THEN next_alloc_addr ELSE '0),
+//        CASE next_alloc_addr [
+//            alloc_counter '=' '0    --- '10,
+//            alloc_counter '=' '1    --- '11,
+//            alloc_counter '=' '2    --- '12,
+//            alloc_counter '=' '3    --- '13,
+//            alloc_counter '=' '4    --- '14,
+//            alloc_counter '=' '5    --- '15,
+//            alloc_counter '=' '6    --- '16,
+//            alloc_counter '=' '7    --- '17,
+//            alloc_counter '=' '8    --- '18,
+//            alloc_counter '=' '9    --- '19
+//        ] '0,
+//        re_ff_en clk (is_IDLE alloc_step) next_alloc_counter alloc_counter,
+//        re_ff_en clk (reset '|' is_DONE alloc_step)
+//            (IF reset THEN '1 ELSE add_Int alloc_counter '1)
+//            next_alloc_counter,
+//        // Memory table
+//        out_node <- (IF (is_RDONE rw_step) THEN selected_cell ELSE '0),
+//        CASE selected_cell [
+//            (arith2mem-->addr) '=' '01    --- cell1,
+//            (arith2mem-->addr) '=' '02    --- cell2,
+//            (arith2mem-->addr) '=' '03    --- cell3,
+//            (arith2mem-->addr) '=' '04    --- cell4,
+//            (arith2mem-->addr) '=' '05    --- cell5,
+//            (arith2mem-->addr) '=' '06    --- cell6,
+//            (arith2mem-->addr) '=' '07    --- cell7,
+//            (arith2mem-->addr) '=' '08    --- cell8,
+//            (arith2mem-->addr) '=' '09    --- cell9,
+//            (arith2mem-->addr) '=' '10    --- cell10,
+//            (arith2mem-->addr) '=' '11    --- cell11,
+//            (arith2mem-->addr) '=' '12    --- cell12,
+//            (arith2mem-->addr) '=' '13    --- cell13,
+//            (arith2mem-->addr) '=' '14    --- cell14,
+//            (arith2mem-->addr) '=' '15    --- cell15,
+//            (arith2mem-->addr) '=' '16    --- cell16,
+//            (arith2mem-->addr) '=' '17    --- cell17,
+//            (arith2mem-->addr) '=' '18    --- cell18,
+//            (arith2mem-->addr) '=' '19    --- cell19,
+//            (arith2mem-->addr) '=' '20    --- cell20
+//        ] cell0,
+//        // Write -- tag here to change memory initial state
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '0)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell0,
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '1)))
+//            (IF reset THEN (mk_node_Int 0    '4) ELSE (arith2mem-->node)) cell1, // 4.111·1.000
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '2)))
+//            (IF reset THEN (mk_node_Int 0    '5) ELSE (arith2mem-->node)) cell2, // 5.001·2.000
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '3)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell3,
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '4)))
+//            (IF reset THEN (mk_node_Int (-1) '0) ELSE (arith2mem-->node)) cell4, // 4.111
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '5)))
+//            (IF reset THEN (mk_node_Int 1    '0) ELSE (arith2mem-->node)) cell5, // 5.001
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '6)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell6,
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '7)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell7,
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '8)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell8,
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '9)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell9,
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '10)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell10,
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '11)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell11,
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '12)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell12,
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '13)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell13,
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '14)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell14,
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '15)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell15,
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '16)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell16,
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '17)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell17,
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '18)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell18,
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '19)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell19,
+//        re_ff_en clk (reset '|' (is_WRITE rw_step '&' (arith2mem-->addr '=' '20)))
+//            (IF reset THEN (mk_node_Int 0    '0) ELSE (arith2mem-->node)) cell20
+//    ]
+//;
+//
+//let p_mem = test_memory 'clk 'reset 'arith2mem 'mem2arith;
+//let v_mem = STE_debug (pexlif2fsm p_mem);
+//
+//let signal_reader =
+//    signal_input    arith2mem mem2arith.
+//    bit_output      a2m_read a2m_write a2m_alloc.
+//    node_output     a2m_node.
+//    g_type_output   a2m_node_type.
+//    Int_output      a2m_node_int.
+//    addr_output     a2m_node_laddr a2m_addr.
+//    bit_output      m2a_read m2a_write m2a_alloc.
+//    node_output     m2a_node.
+//    g_type_output   m2a_node_type.
+//    Int_output      m2a_node_int.
+//    addr_output     m2a_node_laddr m2a_addr.
+//    //
+//    CELL "signal_reader" [
+//        a2m_read    <- arith2mem-->read,
+//        a2m_write   <- arith2mem-->write,
+//        a2m_alloc   <- arith2mem-->alloc,
+//        a2m_node    <- arith2mem-->node,
+//        a2m_node_type   <- a2m_node-->type,
+//        a2m_node_laddr  <- a2m_node-->laddr,
+//        a2m_node_int    <- a2m_node-->int,
+//        a2m_addr    <- arith2mem-->addr,
+//        m2a_read    <- mem2arith-->read,
+//        m2a_write   <- mem2arith-->write,
+//        m2a_alloc   <- mem2arith-->alloc,
+//        m2a_node    <- mem2arith-->node,
+//        m2a_node_type   <- m2a_node-->type,
+//        m2a_node_laddr  <- m2a_node-->laddr,
+//        m2a_node_int    <- m2a_node-->int,
+//        m2a_addr    <- mem2arith-->addr
+//    ]
+//;
+//
+//let test_unit =
+//    bit_input   clk reset.
+//    bit_input   op_req.
+//    arith_prims_input prims.
+//    op_input    op_in.
+//    bit_output  op_ack.
+//    // Debug
+//    bit_output      a2m_read a2m_write a2m_alloc.
+//    node_output     a2m_node.
+//    g_type_output   a2m_node_type.
+//    Int_output      a2m_node_int.
+//    addr_output     a2m_node_laddr a2m_addr.
+//    bit_output      m2a_read m2a_write m2a_alloc.
+//    node_output     m2a_node.
+//    g_type_output   m2a_node_type.
+//    Int_output      m2a_node_int.
+//    addr_output     m2a_node_laddr m2a_addr.
+//    // Internal
+//    signal_internal arith2mem mem2arith.
+//    //
+//    CELL "the_big_test" [
+//        arith clk reset op_req prims op_in op_ack mem2arith arith2mem,
+//        test_memory clk reset arith2mem mem2arith,
+//        signal_reader arith2mem mem2arith
+//            a2m_read a2m_write a2m_alloc
+//            a2m_node a2m_node_type a2m_node_int a2m_node_laddr
+//            a2m_addr
+//            m2a_read m2a_write m2a_alloc
+//            m2a_node m2a_node_type m2a_node_int m2a_node_laddr
+//            m2a_addr
+//    ]
+//;
+//
+//let p_test = test_unit 'clk 'reset 'op_req 'operation 'opcode 'op_ack 'a2m_read 'a2m_write 'a2m_alloc 'a2m_node 'a2m_node_type 'a2m_node_int 'a2m_node_laddr 'a2m_addr 'm2a_read 'm2a_write 'm2a_alloc 'm2a_node 'm2a_node_type 'm2a_node_int 'm2a_node_laddr 'm2a_addr;
+//let v_test = STE_debug (pexlif2fsm p_test);
+//
+//let mk_prims {p::arith_prims} =
+//    let bl = wexpr2bool [] (hw_destr p) then
+//    bl
+//;
+//
+//let ant =
+//    "clk"           is_clock 150 and
+//    "reset"         is "1"               in_cycle 0 followed_by "0" for 149 cycles and
+//    "op_req"        is "1"               in_cycle 4 otherwise "0" until 150 cycles and
+//    "prims[2:0]"    is (mk_prims AP_PLUS) in_cycle 4 and
+//    "op_in[23:0]"   is (mk_op '3 '2 '1)  in_cycle 4
+//;
+//
+//STE "-e" v_test [] ant [] [];
+//cload (DIR^"test_main.fl");
+//
+//

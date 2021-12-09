@@ -1,0 +1,210 @@
+// ALU
+//
+// Dispactches data to the three components of the ALU:
+//  - Arith unit:       +, -, *, /, %
+//  - Logical unit:     NOT, OR, AND, ITE
+//  - Comparator unit:  >, >=, =
+//
+// Interface:
+//  Inputs
+//      clk:        bit
+//      reset:      bit
+//      op_req:     bit
+//      op_type:    prims
+//      redex_addr: addr
+//      a_src_addr: addr
+//      b_src_addr: addr
+//      c_src_addr: addr
+//      d_src_addr: addr
+//  Outputs:
+//      op_ack:             bit
+//      overwrite_redex:    bit
+//      new_redex_value:    node
+//  + signals input and output with memory
+
+cload (DIR^"ALU-utils.fl");
+cload (DIR^"arith/main.fl");
+cload (DIR^"logical/logical.fl");
+cload (DIR^"comparator/comparator.fl");
+cload (DIR^"sch_ifc_unit/sch_ifc_unit.fl");
+
+let ALU =
+    bit_input   clk.
+    bit_input   reset.
+    // PRIMITIVE UNIT
+    bit_input   op_req.
+    prims_input op_type.
+    addr_input  redex_addr.
+    addr_input  a_src_addr.
+    addr_input  b_src_addr.
+    addr_input  c_src_addr.
+    addr_input  d_src_addr.
+    bit_output  op_ack.
+    bit_output  overwrite_redex.
+    node_output new_redex_value.
+    // MEMORY
+    signal_input    sig_in.
+    signal_output   sig_out.
+    // Internal
+    // -- Arith
+    bit_internal            a_op_req.
+    arith_prims_internal    a_op_type.
+    op_internal             a_op.
+    bit_internal            a_op_ack.
+    // Arith unit overwrite the redex directly.
+    signal_internal         a_sig_in.
+    signal_internal         a_sig_out.
+    // -- Logical
+    bit_internal            l_op_req.
+    logical_prims_internal  l_op_type.
+    bit_internal            l_op_ack.
+    node_internal           l_new_redex_value.
+    signal_internal         l_sig_in.
+    signal_internal         l_sig_out.
+    // -- Comparator
+    bit_internal    c_op_req.
+    bit_internal    c_eq_req.
+    bit_internal    c_gt_req.
+    bit_internal    c_op_ack.
+    bit_internal    c_answer.
+    node_internal   c_new_redex_value.
+    signal_internal c_sig_in.
+    signal_internal c_sig_out.
+    // -- Scheduler_ops
+    bit_internal    s_op_req.
+    bit_internal    s_op_ack.
+    node_internal   s_new_redex_value.
+    bit_internal    s_proc_init_req.
+    signal_internal s_sig_in.
+    signal_internal s_sig_out.
+    // -- One wire per prims is easier
+    bit_internal    op_is_P_PLUS.
+    bit_internal    op_is_P_MINUS.
+    bit_internal    op_is_P_TIMES.
+    bit_internal    op_is_P_DIVMOD.
+    bit_internal    op_is_P_EQ.
+    bit_internal    op_is_P_NEQ.
+    bit_internal    op_is_P_GT.
+    bit_internal    op_is_P_GEQ.
+    bit_internal    op_is_P_AND.
+    bit_internal    op_is_P_OR.
+    bit_internal    op_is_P_NOT.
+    bit_internal    op_is_P_COND.
+    bit_internal    op_is_P_PROC_INIT.
+    // Dummy signal
+    // I prefer to use a dummy signal (see definition below) rather than a '0
+    // signal to see if this generates bugs.
+    // I need a special wire for that, otherwise the compiler eats all my free
+    // RAM and then crashes.
+    signal_internal dummy_signal.
+    //
+    CELL "ALU" [
+        // Wiring prims monstrusity
+        // This is purely because is_BLA op_type takes more place
+        op_is_P_PLUS   <- is_P_PLUS   op_type,
+        op_is_P_MINUS  <- is_P_MINUS  op_type,
+        op_is_P_TIMES  <- is_P_TIMES  op_type,
+        op_is_P_DIVMOD <- is_P_DIVMOD op_type,
+        op_is_P_EQ     <- is_P_EQ     op_type,
+        op_is_P_NEQ    <- is_P_NEQ    op_type,
+        op_is_P_GT     <- is_P_GT     op_type,
+        op_is_P_GEQ    <- is_P_GEQ    op_type,
+        op_is_P_AND    <- is_P_AND    op_type,
+        op_is_P_OR     <- is_P_OR     op_type,
+        op_is_P_NOT    <- is_P_NOT    op_type,
+        op_is_P_COND   <- is_P_COND   op_type,
+        op_is_P_PROC_INIT <- is_P_PROC_INIT  op_type,
+        // For every module, we compute its inputs in order.
+
+        // Arith unit
+        a_op_req <- op_req '&' (
+            op_is_P_PLUS '|' op_is_P_MINUS '|' op_is_P_TIMES '|' op_is_P_DIVMOD
+        ),
+        CASE a_op_type [
+            op_is_P_PLUS    --- AP_PLUS,
+            op_is_P_MINUS   --- AP_MINUS,
+            op_is_P_TIMES   --- AP_TIMES,
+            op_is_P_DIVMOD  --- AP_DIVMOD
+        ] 'X,
+        a_op <- '0<--srcA ? a_src_addr
+                  <--srcB ? b_src_addr
+                  <--srcC ? c_src_addr
+                  <--dest ? redex_addr,
+        a_sig_in <- (IF a_op_req THEN sig_in ELSE '0),
+        arith clk reset
+            a_op_req a_op_type a_op
+            a_op_ack
+            a_sig_in a_sig_out,
+
+        // Logical unit
+        l_op_req <- op_req '&' (
+            op_is_P_AND '|' op_is_P_OR '|' op_is_P_NOT '|' op_is_P_COND),
+        CASE l_op_type [
+            op_is_P_AND     --- LP_AND,
+            op_is_P_OR      --- LP_OR,
+            op_is_P_NOT     --- LP_NOT,
+            op_is_P_COND    --- LP_COND
+        ] 'X,
+        l_sig_in <- (IF l_op_req THEN sig_in ELSE '0),
+        logical_unit clk
+            l_op_req l_op_type a_src_addr b_src_addr c_src_addr
+            l_op_ack l_new_redex_value
+            l_sig_in l_sig_out,
+
+        // Comparator unit
+        // TODO account for NEQ in a cleaner way
+        c_op_req <- op_req '&' (
+            op_is_P_EQ '|' op_is_P_NEQ '|' op_is_P_GT '|' op_is_P_GEQ),
+        c_eq_req <- c_op_req '&' (op_is_P_EQ '|' op_is_P_NEQ '|' op_is_P_GEQ),
+        c_gt_req <- c_op_req '&' (op_is_P_GT '|' op_is_P_GEQ),
+        c_sig_in <- (IF c_op_req THEN sig_in ELSE '0),
+        comparator_unit clk reset
+            c_eq_req c_gt_req a_src_addr b_src_addr
+            c_op_ack c_answer
+            c_sig_in c_sig_out,
+// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        // Scheduler interface unit
+        s_op_req <- op_req '&' (op_is_P_PROC_INIT),
+        s_proc_init_req <- s_op_req '&' (op_is_P_PROC_INIT),
+        s_sig_in <- (IF s_op_req THEN sig_in ELSE '0),
+//        sch_ifc_unit clk reset
+//            s_proc_init_req a_src_addr b_src_addr c_src_addr d_src_addr
+//            s_op_ack s_new_redex_value
+//            s_sig_in s_sig_out,
+// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        // Generating output
+        CASE op_ack [
+            a_op_req    --- a_op_ack,
+            l_op_req    --- l_op_ack,
+            c_op_req    --- c_op_ack,
+            s_op_req    --- s_op_ack
+        ] '0,
+        overwrite_redex <- (l_op_req '|' c_op_req '|' s_op_req),
+        CASE new_redex_value [
+            l_op_req	--- l_new_redex_value,
+            c_op_req	--- bit2bool_node (op_is_P_NEQ '^' c_answer),
+            s_op_req	--- s_new_redex_value
+        ] '0,
+        CASE sig_out [
+            a_op_req    --- a_sig_out,
+            l_op_req    --- l_sig_out,
+            c_op_req    --- c_sig_out,
+            s_op_req    --- s_sig_out
+        ] '0
+];
+
+let p = ALU 'clk 'reset
+	    'op_req 'op_type
+	    'redex_addr 'a_src_addr 'b_src_addr 'c_src_addr 'd_src_addr
+	    'op_ack
+	    'overwrite_redex 'new_redex_value
+	    'sig_in 'sig_out
+;
+
+
+
+
+let ckt = pexlif2fsm p;
+
+
+let v = STE_debug ckt;

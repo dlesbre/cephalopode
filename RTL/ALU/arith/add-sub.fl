@@ -1,0 +1,591 @@
+// ADDITION, SUBSTRACTION
+//
+
+cload (DIR^"../ALU-utils.fl");
+
+/////////////////////
+// PROCESS MANAGER //
+/////////////////////
+
+ENUM "op_process" [
+    // Special states
+    "IDLE", "DONE", "WAIT",
+    // A != 0, B != 0
+    "AB_READ_A", "AB_READ_B", "AB_ADDSUB", "AB_ALLOC", "AB_WRITE",
+    // A != 0, B == 0
+    "A_CHECK", "A_ALLOC", "A_WRITE", "A_READ", "A_ADDSUB", "A_RECOPY",
+    // A == 0, B != 0
+    "B_CHECK", "B_ALLOC", "B_WRITE", "B_READ", "B_ADDSUB", "B_RECOPY",
+    // A == 0, B == 0
+    "FINAL_CHECK", "FINAL_ALLOC", "FINAL_WRITE", "FINAL_LAST_WRITE", "FINAL_RECOPY"
+];
+
+ENUM "simple_process" [
+    "IDLE", "WAIT", "DONE", "READ_A", "READ_B", "WRITE", "ALLOC", "ADDSUB", "CHECK"
+];
+
+ENUM "mode" [ "AB", "A", "B", "FINAL", "SPECIAL" ];
+
+let addsub_s_manager =
+    op_process_input      step.
+    simple_process_output simple_step.
+    CELL "draw_hier manager_simplifier" [
+        CASE simple_step [
+            is_IDLE             step --- IDLE,
+            is_DONE             step --- DONE,
+            is_WAIT             step --- WAIT,
+            is_AB_READ_A        step --- READ_A,
+            is_AB_READ_B        step --- READ_B,
+            is_AB_ADDSUB        step --- ADDSUB,
+            is_AB_ALLOC         step --- ALLOC,
+            is_AB_WRITE         step --- WRITE,
+            is_A_CHECK          step --- CHECK,
+            is_A_ALLOC          step --- ALLOC,
+            is_A_WRITE          step --- WRITE,
+            is_A_READ           step --- READ_A,
+            is_A_ADDSUB         step --- ADDSUB,
+            is_A_RECOPY         step --- WRITE,
+            is_B_CHECK          step --- CHECK,
+            is_B_ALLOC          step --- ALLOC,
+            is_B_WRITE          step --- WRITE,
+            is_B_READ           step --- READ_B,
+            is_B_ADDSUB         step --- ADDSUB,
+            is_B_RECOPY         step --- WRITE,
+            is_FINAL_CHECK      step --- CHECK,
+            is_FINAL_ALLOC      step --- ALLOC,
+            is_FINAL_WRITE      step --- WRITE,
+            is_FINAL_LAST_WRITE step --- WRITE,
+            is_FINAL_RECOPY     step --- WRITE
+        ] 'X
+    ]
+;
+
+let addsub_mode_manager =
+    op_process_input step.
+    mode_output      mode.
+    CELL "draw_hier manager_mode" [
+        CASE mode [
+            is_IDLE             step --- SPECIAL,
+            is_DONE             step --- SPECIAL,
+            is_WAIT             step --- FINAL,
+            is_AB_READ_A        step --- AB,
+            is_AB_READ_B        step --- AB,
+            is_AB_ADDSUB        step --- AB,
+            is_AB_ALLOC         step --- AB,
+            is_AB_WRITE         step --- AB,
+            is_A_CHECK          step --- A,
+            is_A_ALLOC          step --- A,
+            is_A_WRITE          step --- A,
+            is_A_READ           step --- A,
+            is_A_ADDSUB         step --- A,
+            is_A_RECOPY         step --- A,
+            is_B_CHECK          step --- B,
+            is_B_ALLOC          step --- B,
+            is_B_WRITE          step --- B,
+            is_B_READ           step --- B,
+            is_B_ADDSUB         step --- B,
+            is_B_RECOPY         step --- B,
+            is_FINAL_CHECK      step --- FINAL,
+            is_FINAL_ALLOC      step --- FINAL,
+            is_FINAL_WRITE      step --- FINAL,
+            is_FINAL_LAST_WRITE step --- FINAL,
+            is_FINAL_RECOPY     step --- FINAL
+        ] 'X
+    ]
+;
+
+let addsub_manager =
+    bit_input             clk reset do_op.
+    bit_input             read_a_done read_b_done write_res_done alloc_done.
+    bit_input             a_end b_end a_pos b_pos rect carry is_add.
+    op_process_output     step.
+    simple_process_output simple_step.
+    mode_output           mode.
+    // Internal wires
+    //
+    CELL "draw_hier addsub_manager" [
+        Moore_FSM "manager" clk step (reset --- IDLE) [
+            IDLE      --- do_op               --- AB_READ_A,
+            AB_READ_A --- read_a_done         --- AB_READ_B,
+            AB_READ_B --- read_b_done         --- AB_ADDSUB,
+            AB_ADDSUB --- a_end '&' b_end     --- FINAL_CHECK,
+                // Both A and B are exhausted
+                FINAL_CHECK  --- rect   --- FINAL_ALLOC,
+                    // There is still work to do: carry propagation or sign
+                    // extension
+                    FINAL_ALLOC      --- alloc_done         --- FINAL_WRITE,
+                    FINAL_WRITE      --- write_res_done     --- WAIT,
+                    WAIT             --- '~' write_res_done --- FINAL_LAST_WRITE,
+                    FINAL_LAST_WRITE --- write_res_done     --- DONE,
+                FINAL_CHECK --- default --- FINAL_RECOPY,
+                    // There is no more work to do
+                    FINAL_RECOPY --- write_res_done --- DONE,
+            AB_ADDSUB --- a_end '&' '~' b_end --- B_CHECK,
+                // A is exhausted, but not B
+                B_CHECK --- b_end           --- FINAL_CHECK,
+                B_CHECK --- a_pos '=' carry '|' ('~' is_add) --- B_ALLOC,
+                    // Carry propagation or -1
+                    B_ALLOC  --- alloc_done     --- B_WRITE,
+                    B_WRITE  --- write_res_done --- B_READ,
+                    B_READ   --- read_b_done    --- B_ADDSUB,
+                    B_ADDSUB --- default        --- B_CHECK,
+                B_CHECK --- default         --- B_RECOPY,
+                    // There is no more work to do: the next part of the integer
+                    // what remains of B
+                    B_RECOPY --- write_res_done --- DONE,
+            AB_ADDSUB --- '~' a_end '&' b_end --- A_CHECK,
+                // B is exhausted, but not A
+                A_CHECK --- a_end           --- FINAL_CHECK,
+                A_CHECK --- b_pos '=' carry --- A_ALLOC,
+                    // Carry propagation
+                    A_ALLOC  --- alloc_done     --- A_WRITE,
+                    A_WRITE  --- write_res_done --- A_READ,
+                    A_READ   --- read_a_done    --- A_ADDSUB,
+                    A_ADDSUB --- default        --- A_CHECK,
+                A_CHECK --- default         --- A_RECOPY,
+                    // There is no more work to do: the next part of the integer
+                    // what remains of A
+                    A_RECOPY --- write_res_done --- DONE,
+            AB_ADDSUB --- default             --- AB_ALLOC,
+                // Neither A nor B are exhausted
+                AB_ALLOC --- alloc_done     --- AB_WRITE,
+                AB_WRITE --- write_res_done --- AB_READ_A,
+            DONE      --- '~' do_op           --- IDLE
+        ],
+        addsub_s_manager step simple_step,
+        addsub_mode_manager step mode
+    ]
+;
+
+//STE_debug (pexlif2fsm (add_manager 'clk 'reset 'do_op 'read_a_done 'read_b_done 'write_res_done 'alloc_done 'a_end 'b_end 'a_pos 'b_pos 'rect 'carry 'step 'sstep));
+
+
+////////
+// IO //
+////////
+
+// Interface
+STRUCT "io_interface_data" [
+    ("read_a", "rw_data"),
+    ("read_b", "rw_data"),
+    ("write",  "rw_data"),
+    ("alloc",  "alloc_data")
+];
+
+let io =
+    bit_input clk reset.
+    // Inputs
+    simple_process_input sstep.
+    addr_input           a_addr b_addr res_addr.
+    node_input           node_out.
+    // Outputs
+    rw_data_output    read_a_out read_b_out write_out.
+    alloc_data_output alloc_out.
+    // Interface with memory
+    signal_input     sig_in.
+    signal_output    sig_out.
+    // Internal wires
+    rw_data_internal    read_a_in read_b_in write_in.
+    alloc_data_internal alloc_in.
+    bit_internal        read_req.
+    addr_internal       addr_out.
+    //
+    CELL "draw_hier IO" [
+        // Managers
+        read_protocol  "A"      clk read_a_in read_a_out,
+        read_protocol  "B"      clk read_b_in read_b_out,
+        write_protocol "result" clk write_in write_out,
+        alloc_protocol clk reset alloc_in alloc_out,
+        // DATA IN
+        read_a_in <- '0<--start ? (is_READ_A sstep)
+                       <--ack   ? (sig_in-->read)
+                       <--data  ? (sig_in-->node),
+        read_b_in <- '0<--start ? (is_READ_B sstep)
+                       <--ack   ? (sig_in-->read)
+                       <--data  ? (sig_in-->node),
+        write_in <- '0<--start ? (is_WRITE sstep)
+                      <--ack   ? (sig_in-->write)
+                      <--data  ? node_out,
+        alloc_in <- '0<--start ? (is_ALLOC sstep)
+                      <--ack   ? (sig_in-->alloc)
+                      <--addr  ? (sig_in-->addr),
+        // SIGNAL OUT
+        read_req <- read_a_out-->req '|' read_b_out-->req,
+        CASE addr_out [
+            (is_READ_A sstep) --- a_addr,
+            (is_READ_B sstep) --- b_addr,
+            (is_WRITE sstep)  --- res_addr
+        ] 'X,
+        sig_out <- '0<--alloc ? (alloc_out-->req)
+                     <--read  ? read_req
+                     <--write ? (write_out-->req)
+                     <--node  ? (write_out-->data)
+                     <--addr  ? addr_out
+    ]
+;
+
+//let p_io = io 'clk 'step 'a_addr 'b_addr 'res_addr 'node_out 'read_a 'read_b 'write 'alloc' 'sig_in 'sig_out;
+//let ckt_io = pexlif2fsm p_io;
+//let v_io = STE_debug ckt_io;
+
+
+
+////////////////
+// OPERATIONS //
+////////////////
+
+let full_adder =
+    Int_input  A B.
+    bit_input  prev_carry.
+    Int_output res.
+    bit_output carry.
+    // Internal wires
+    eInt_internal big_res.
+    CELL "draw_hier full_adder" [
+        big_res <-
+            (ZX A) '+' (ZX B)
+            '+' (IF prev_carry THEN {'1::eInt} ELSE {'0::eInt}),
+        carry <- big_res ~~ (INT_SZ),
+        res <- big_res ~~~ ((INT_SZ-1)--0)
+    ]
+;
+
+let p_add = full_adder 'A 'B 'prev_carry 'res 'carry;
+let c_add = pexlif2fsm p_add;
+let v_add = STE_debug c_add;
+
+let compute =
+    bit_input               clk.
+    bit_input               a_pos b_pos pcarry is_add.
+    Int_input               A B.
+    simple_process_input    sstep.
+    mode_input              mode.
+    bit_output              carry.
+    Int_output              res last_res.
+    // Internal wires
+    Int_internal    revB curB in1 in2.
+    Int_internal    prev1 prev2.
+    //
+    CELL "draw_hier computer" [
+        full_adder in1 in2 pcarry res carry,
+        CASE last_res [ // Last res is used only when a_pos = b_pos
+            '~' a_pos --- Int_neg_one,
+            carry     --- Int_one
+        ] Int_zero,
+        re_ff clk in1 prev1,
+        CASE in1 [
+            (is_FINAL mode) '|' ('~' (is_ADDSUB sstep)) --- prev1,
+            '~' (is_B mode)                             --- A,
+            a_pos                                       --- Int_zero
+        ] Int_neg_one,
+        re_ff clk in2 prev2,
+        CASE in2 [
+            (is_FINAL mode) '|' ('~' (is_ADDSUB sstep)) --- prev2,
+            '~' (is_A mode)                             --- curB,
+            b_pos                                       --- Int_zero
+        ] Int_neg_one,
+        curB <- (IF is_add THEN B ELSE revB),
+        revB <- B '^' Int_neg_one
+    ]
+;
+
+let p_compute = compute 'clk 'ap 'bp 'pcy 'add 'A 'B 'ss 'md 'cy 'r 'lr;
+let ckt_compute = pexlif2fsm p_compute;
+let v_compute = STE_debug ckt_compute;
+
+///////////////
+// ADDRESSES //
+///////////////
+
+let address_manager =
+    bit_input               clk a_end b_end is_rec write_done.
+    op_input                op.
+    op_process_input        step.
+    addr_input              next_a_addr next_b_addr alloc_addr.
+    addr_output             a_addr b_addr res_addr write_addr.
+    // Internal wires
+    addr_internal   prev_alloc_addr.
+    //
+    CELL "draw_hier address" [
+        a_addr   <- (IF is_rec THEN next_a_addr ELSE op-->srcA),
+        b_addr   <- (IF is_rec THEN next_b_addr ELSE op-->srcB),
+        CASE res_addr [
+            is_A_RECOPY step            --- next_a_addr,
+            is_B_RECOPY step            --- next_b_addr,
+            is_FINAL_RECOPY step        --- addr_end,
+            is_FINAL_LAST_WRITE step    --- addr_end
+        ] alloc_addr,
+        re_ff_en clk write_done alloc_addr prev_alloc_addr,
+        write_addr <- (
+            IF is_rec
+            THEN prev_alloc_addr
+            ELSE op-->dest)
+    ]
+;
+
+
+//////////////////
+// CONTROL BITS //
+//////////////////
+
+// Bits used at CHECK steps (eg A is exhausted, B is negative, etc.)
+// + carry
+
+let control =
+    bit_input               clk is_add.
+    bit_input               read_a_done read_b_done wr_done.
+    simple_process_input    sstep.
+    node_input              A B.
+    bit_input               res_msb carry.
+    bit_output              a_end b_end a_pos b_pos rect is_rec prev_carry.
+    // Internal wires
+    bit_internal    reset.
+    //
+    CELL "draw_hier control_bits" [
+        reset <- is_IDLE sstep,
+        re_ff_en clk a_end ('~' A-->int-->msb) a_pos,
+        re_ff_en clk b_end (B-->int-->msb '^' is_add) b_pos,
+        bit_FSM "a_end" clk reset
+            (read_a_done '&' (A-->laddr '=' addr_end))
+            reset
+            a_end,
+        bit_FSM "b_end" clk reset
+            (read_b_done '&' (B-->laddr '=' addr_end))
+            reset
+            b_end,
+        rect <- '~'(a_pos '|' b_pos '|' res_msb)
+            '|' (a_pos '&' b_pos '&' (carry '|' res_msb)),
+        bit_FSM "is_rec" clk reset wr_done reset is_rec,
+        re_ff_en clk (reset '|' wr_done) (IF reset THEN '~' is_add ELSE carry)
+            prev_carry
+    ]
+;
+
+let p_control = control 'clk 'is_add 'rad 'rbd 'wd 'sstep 'a 'b 'rm 'cy 'ae 'be 'ap 'bp 'rt 'isr 'pcy;
+let ckt_control = pexlif2fsm p_control;
+let v_control = STE_debug ckt_control;
+
+//////////////////////////
+// BRINGING IT TOGETHER //
+//////////////////////////
+
+//addsub <clk> <reset> <do_op> <is_add> <op_in> <done> <signal_in> <signal_out>
+//  Hardware module that given two source addresses and a destination address
+//  either perform an addition or a substraction on Ints.
+//
+//  Arguments:
+//      <clk>           Clock
+//      <reset>         Resets the module
+//      <do_op>         Starts the process, means op_in and is_add are ready at this cycle
+//      <is_add>        Selects between addition and substraction
+//      <op_in>         Opcode: [ dest::addr, srcA::addr, srcB::addr ]
+//      <done>          Goes on when op is done, goes off when do_op is off
+//      <signal_in>     Interface from memory
+//      <signal_out>    Interface to memory
+let addsub =
+    bit_input   clk reset do_op in_is_add.
+    op_input    op_in.
+    bit_output  add_done.
+    // Signals
+    signal_input    sig_in.
+    signal_output   sig_out.
+    // Internal wires
+    op_internal             op.
+    bit_internal            stored_is_add is_add.
+    bit_internal            a_pos b_pos a_end b_end single_end both_end.
+    bit_internal            rect is_rec.
+    bit_internal            carry prev_carry.
+    rw_data_internal        read_a read_b write_res.
+    alloc_data_internal     alloc0.
+    Int_internal            in1 in2 res last_res.
+    addr_internal           w_addr a_addr b_addr res_addr.
+    addr_internal           prev_alloc_addr next_a_addr next_b_addr next_addr.
+    node_internal           node_out res_node last_res_node.
+    op_process_internal     step.
+    simple_process_internal simple_step.
+    mode_internal           mode.
+    bit_internal            debug_useless.
+    // Circuit
+    CELL "draw_hier addsub" [
+        // Store initial data
+        re_ff_en clk do_op op_in op,
+        re_ff_en clk do_op in_is_add stored_is_add,
+        is_add <- (IF do_op THEN in_is_add ELSE stored_is_add),
+        // Control bits
+        control clk is_add (read_a-->done) (read_b-->done) (write_res-->done)
+            simple_step
+            (read_a-->data) (read_b-->data) (res-->msb) carry
+            a_end b_end a_pos b_pos rect is_rec prev_carry,
+        // Process manager
+        addsub_manager clk reset do_op
+            (read_a-->done) (read_b-->done) (write_res-->done) (alloc0-->done)
+            a_end b_end a_pos b_pos rect carry is_add
+            step simple_step mode,
+        // IO
+        io clk reset simple_step a_addr b_addr w_addr node_out read_a read_b write_res alloc0 sig_in sig_out,
+        // Data out
+        // TODO: add another writing unit to get rid of this (and of WAIT)
+        node_out <- (
+            IF (is_FINAL_LAST_WRITE step)
+            THEN last_res_node
+            ELSE res_node),
+        // Address
+        address_manager clk a_end b_end is_rec (write_res-->done) op step
+            (read_a-->data-->laddr) (read_b-->data-->laddr) (alloc0-->addr)
+            a_addr b_addr res_addr w_addr,
+        // Computing everything
+        compute clk a_pos b_pos prev_carry is_add (read_a-->data-->int)
+            (read_b-->data-->int) simple_step mode carry res last_res,
+        res_node <- node_Int_zero<--int   ? res
+                                 <--laddr ? res_addr,
+        last_res_node <- node_Int_zero<--int ? last_res,
+        // End
+        add_done <- (is_DONE simple_step),
+        debug_useless <- '0
+    ]
+;
+
+let p_add = addsub 'clk 'reset 'do_op 'in_is_add 'op_in 'add_done 'sig_in 'sig_out;
+let ckt_add = pexlif2fsm p_add;
+let v_add = STE_debug ckt_add;
+
+
+
+/////////////
+// TESTING //
+/////////////
+
+let mk_op dst s1 s2 =
+    let op = '0<--dest ? dst
+               <--srcA ? s1
+               <--srcB ? s2
+    then
+    let bl = wexpr2bool [] (hw_destr op) then
+    bl
+;
+
+let mk_sig al r w n ad =
+    let sig = '0<--alloc ? al
+                <--read  ? r
+                <--write ? w
+                <--node  ? n
+                <--addr  ? ad
+    then
+    let bl = wexpr2bool [] (hw_destr sig) then
+    bl
+;
+
+ENUM "state" [ "IDLE", "READ", "NEXTR", "WRITE", "NEXTW", "ALLOC", "NEXTA"];
+
+let dummy_io =
+    bit_input     clk reset.
+    signal_input  sig_in.
+    signal_output sig_out.
+    // Internal wires
+    state_internal step.
+    addr_internal  addr_in addr_out.
+    node_internal  node_out.
+    Int_internal   nr na tmp_nr tmp_na.
+    CELL "draw_hier dummy_io" [
+        Moore_FSM "handshaker" clk step (reset --- IDLE) [
+        IDLE  --- sig_in-->read      --- READ,
+        READ  --- '~' sig_in-->read  --- NEXTR,
+        NEXTR --- default            --- IDLE,
+        IDLE  --- sig_in-->write     --- WRITE,
+        WRITE --- '~' sig_in-->write --- NEXTW,
+        NEXTW --- default            --- IDLE,
+        IDLE  --- sig_in-->alloc     --- ALLOC,
+        ALLOC --- '~' sig_in-->alloc --- NEXTA,
+        NEXTA --- default            --- IDLE
+        ],
+        sig_out <- '0<--read  ? (is_READ step)
+                     <--write ? (is_WRITE step)
+                     <--alloc ? (is_ALLOC step)
+                     <--node  ? node_out
+                     <--addr  ? addr_out,
+        re_ff_en clk (reset '|' is_NEXTA step)
+                    (IF reset THEN '0 ELSE tmp_na) na,
+        CASE tmp_na [
+            na '=' '0 --- '1,
+            na '=' '1 --- '2,
+            na '=' '2 --- '3,
+            na '=' '3 --- '4,
+            na '=' '4 --- '5
+        ] 'X,
+        addr_in <- sig_in-->addr,
+        CASE node_out [ // HERE TO CHANGE MEMORY
+            addr_in '=' '3 --- (mk_node_Int 3 '0),      // 011
+            addr_in '=' '2 --- (mk_node_Int (-3) '5),   // 011·101
+            addr_in '=' '5 --- (mk_node_Int 3 0)        // 011
+        ] 'X,
+        CASE addr_out [
+            na '=' '0 --- '10,
+            na '=' '1 --- '11,
+            na '=' '2 --- '12,
+            na '=' '3 --- '13,
+            na '=' '4 --- '14,
+            na '=' '5 --- '15,
+            na '=' '6 --- '16,
+            na '=' '7 --- '17,
+            na '=' '8 --- '18,
+            na '=' '9 --- '19
+        ] 'X
+    ]
+;
+
+let split_signal =
+    signal_input sig.
+    bit_output   rd wr al.
+    Int_output   int_.
+    addr_output  int_adr adr.
+    CELL "draw_hier split" [
+        rd      <- sig-->read,
+        wr      <- sig-->write,
+        al      <- sig-->alloc,
+        int_    <- sig-->node-->int,
+        int_adr <- sig-->node-->laddr,
+        adr     <- sig-->addr
+    ]
+;
+
+
+let test =
+    bit_input  clk reset do_op is_add.
+    op_input   op_in.
+    bit_output ok_done.
+    // Debug
+    bit_output  debug_read_req debug_read_ack.
+    bit_output  debug_write_req debug_write_ack.
+    bit_output  debug_alloc_req debug_alloc_ack.
+    Int_output  debug_Int_in.
+    addr_output debug_Int_addr_in debug_addr_in.
+    Int_output  debug_Int_out.
+    addr_output debug_Int_addr_out debug_addr_out.
+    // Internal wires
+    signal_internal sig_add2mem sig_mem2add.
+    CELL "test" [
+        dummy_io clk reset sig_add2mem sig_mem2add,
+        addsub clk reset do_op is_add op_in ok_done sig_mem2add sig_add2mem,
+        // Debug
+        split_signal sig_mem2add debug_read_ack debug_write_ack debug_alloc_ack debug_Int_in  debug_Int_addr_in  debug_addr_in,
+        split_signal sig_add2mem debug_read_req debug_write_req debug_alloc_req debug_Int_out debug_Int_addr_out debug_addr_out
+    ]
+;
+
+let p_test = test 'clk 'reset 'do_op 'is_add 'op_in 'ok_done 'dra 'dwa 'daa 'dIi 'dIai 'dai 'drr 'dwr 'dar 'dIo 'dIao 'dao;
+let ckt_test = pexlif2fsm p_test;
+let v_test = STE_debug ckt_test;
+
+let ant =
+        "clk" is_clock 100
+    and
+        "reset" is "1" in_cycle 0 followed_by "0" for 99 cycles
+    and
+        "do_op" is "1" in_cycle 4 otherwise "0" until 100 cycles
+    and
+        "op_in[14:0]" is (mk_op '1 '2 '3) in_cycle 4
+    and "is_add" is "1" in_cycle 4
+;
+
+// STE "-e" v_test [] ant [] [];
+// load (DIR^"add-sub-commands.fl");

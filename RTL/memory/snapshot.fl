@@ -1,0 +1,190 @@
+cload (DIR^"../types.fl");
+
+let snapshot_slice =
+    //inputs shared among all slices
+    bit_input	    clk.
+    bit_input       not_reset.  // negated reset signal
+    bit_input       want_snap.  // want bit for snapshot word or live word?
+    bit_input       snap_write. // in snapshot mode and about to do a write
+    bit_input       clear_snap. // clear the snapshot
+
+    //inputs specific to each slice
+    bit_input       enable.     // there's a rw op and this is the slice
+				// being addressed
+    //outputs
+    bit_output	    which.      // the output bit (see want_snap)
+
+    //internals
+    bit_internal    relocate.
+    bit_internal    which_live which_snap.
+    bit_internal    next_which_live next_which_snap.
+
+    //logic
+    CELL "draw_hier snapshot_slice" [
+         re_ff clk next_which_live which_live,
+         re_ff clk next_which_snap which_snap,
+         relocate <- enable '&' snap_write,
+         next_which_snap <- not_reset '&'
+			    ( (clear_snap '&' which_live) '|'
+			      (('~' clear_snap) '&' which_snap) ),
+         next_which_live <- not_reset '&'
+			    ( (relocate '&' ('~' which_snap)) '|'
+			      (('~' relocate) '&' which_live) ),
+         which <- enable '&'
+		  ( (want_snap '&' next_which_snap) '|'
+		    (('~' want_snap) '&' next_which_live) )
+];
+
+//let snapshot_slice =
+//    bit_input	    clk.
+//    bit_input	    want_snapshot.
+//    bit_input	    snapshot_write.
+//    bit_input	    keep_live.
+//    bit_input	    keep_shadow.
+//    bit_input	    enable.
+//    bit_output	    which.
+//    //
+//    bit_internal    has_shadow next_has_shadow.
+//    bit_internal    which_live next_which_live.
+//    bit_internal    first_write.
+//    CELL "draw_hier snapshot_slice" [
+//	re_ff clk next_which_live which_live,
+//	re_ff clk next_has_shadow has_shadow,
+//	first_write <- enable '&' snapshot_write '&' '~' has_shadow,
+//	which <- (want_snapshot '&' has_shadow) '^' next_which_live,
+//	next_which_live <- keep_live '&' (which_live '^' first_write),
+//	next_has_shadow <- keep_shadow '&' (has_shadow '|' first_write)
+//];
+
+let snapshot_group =
+    bit_input	    clk.
+    bit_input       reset.
+    bit_input	    want_snapshot.  //do we want the snapshot msb or the live msb?
+    bit_input	    snapshot_write. //is it a right and in snapshot mode?
+    bit_input       clear_snapshot. //clear snapshot
+    bit_input	    do_op. //is a rw operation being done?
+    addr_input	    addr_in.
+    bit_output	    msb.
+    //
+    bit_internal not_reset.
+    bit_list_internal NODES	{enable_l:: bit list}.
+    bit_list_internal NODES	{which_l:: bit list}.
+    //
+    CELL "draw_hier snapshot_group" (
+	(map2 (snapshot_slice clk not_reset want_snapshot snapshot_write clear_snapshot)
+		  enable_l which_l)@[
+        not_reset <- '~' reset,
+	EN_DECODER_list do_op addr_in enable_l,
+	msb <- (accumulate (defix '|') which_l)
+]);
+
+ENUM "snapshot_mode" ["NORMAL", "SNAPSHOT_MODE"];
+
+let snapshot_mgr =
+    bit_input	    clk reset.
+    //
+    bit_input	    want_snapshot.
+    bit_input	    take_snapshot.
+    bit_input	    clear_snapshot.
+    //
+    bit_input	    do_op. //are we doing a rw operation?
+    bit_input	    rw.
+    addr_input	    addr_in.
+    eaddr_output    addr_out.
+    //
+    bit_internal snapshot_write msb.
+    snapshot_mode_internal  mode.
+    CELL "draw_hier snapshot_mgr" [
+	snapshot_group clk reset want_snapshot snapshot_write clear_snapshot
+            do_op addr_in msb,
+	(Moore_FSM "Snapshot_mode" clk mode
+		(reset, NORMAL) [
+	    NORMAL	  --- take_snapshot  --- SNAPSHOT_MODE,
+	    SNAPSHOT_MODE --- clear_snapshot --- NORMAL
+	]),
+	snapshot_write <- is_SNAPSHOT_MODE mode '&' '~' rw,
+	addr_out <- addr2eaddr msb addr_in
+];
+
+//let v = STE_debug (pexlif2fsm (snapshot_mgr 'clk 'reset
+//					    'want_snapshot 'take_snapshot
+//					    'clear_snapshot 'do_op 'rw
+//					    'addr_in 'addr_out));
+//
+//let q = 
+//    let vis = v in
+//    (add_waveform vis ["clk"]) fseq
+//    (add_waveform vis ["reset"]) fseq
+//    (add_waveform vis ["want_snapshot"]) fseq
+//    (add_waveform vis ["take_snapshot"]) fseq
+//    (add_waveform vis ["clear_snapshot"]) fseq
+//    (add_waveform vis ["do_op"]) fseq
+//    (add_waveform vis ["rw"]) fseq
+//    (add_waveform vis ["addr_in[4:0]"]) fseq
+//    (add_waveform vis ["addr_out[5:0]"]) fseq
+//    let tab_1 = draw_fanin vis (0) 20 ["addr_out[5:0]"] then
+//    let tab_2 = draw_inside vis 1 ["msb"] then
+//    let tab_3 = draw_inside vis 2 ["i1/which_l[24]"] then
+//    ()
+//;
+//
+//let ant = q fseq
+//    let N = 100 in
+//    "clk" is_clock N
+//  and 
+//    "reset" is "1" for 1 cycle otherwise "0" until N cycles
+//  and
+//    "do_op" is
+//	    "1" in_cycle 5 followed_by
+//	    "1" in_cycle 7 followed_by
+//	    "1" in_cycle 9 followed_by
+//	    "1" in_cycle 11 followed_by
+//	    //
+//	    "1" in_cycle 15 followed_by
+//	    "1" in_cycle 17 followed_by
+//	    "1" in_cycle 19 followed_by
+//	    "1" in_cycle 21 followed_by
+//	    //
+//	    "1" in_cycle 25 followed_by
+//	    "1" in_cycle 27 followed_by
+//	    "1" in_cycle 29 followed_by
+//	    "1" in_cycle 31 followed_by
+//	    //
+//	    "0" in_cycle N otherwise "0" until N cycles
+//  and
+//    "rw" is
+//	    "1" in_cycle 5 followed_by
+//	    "0" in_cycle 7 followed_by
+//	    "1" in_cycle 9 followed_by
+//	    "0" in_cycle 11 followed_by
+//	    //
+//	    "1" in_cycle 15 followed_by
+//	    "0" in_cycle 17 followed_by
+//	    "1" in_cycle 19 followed_by
+//	    "0" in_cycle 21 followed_by
+//	    //
+//	    "1" in_cycle 25 followed_by
+//	    "0" in_cycle 27 followed_by
+//	    "1" in_cycle 29 followed_by
+//	    "0" in_cycle 31 followed_by
+//	    //
+//	    "1" in_cycle N otherwise "1" until N cycles
+//  and
+//    "clear_snapshot" is
+//	    "1" in_cycle 23 followed_by
+//	    "0" in_cycle N otherwise "0" until N cycles
+//  and
+//    "take_snapshot" is
+//	    "1" in_cycle 13 followed_by
+//	    "0" in_cycle N otherwise "0" until N cycles
+//  and
+//    "want_snapshot" is
+//	    "1" in_cycle 15 followed_by
+//	    "1" in_cycle 19 followed_by
+//	    "0" in_cycle N otherwise "0" until N cycles
+//  and
+//    "addr_in[4:0]" is 
+//	    "a[4:0]" for N cycles 
+//;
+//STE "-e" v [] ant [] [];
+//

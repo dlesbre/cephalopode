@@ -1,0 +1,40 @@
+// multiplier unit recoded with jeremy's high level language
+
+cload (DIR^"../ALU-utils.fl");
+
+TYPE "simple_dInt" (2*INT_SZ);
+
+STRUCT "dInt" (2*INT_SZ) [
+    ("simple",  "simple_dInt",  ((2*INT_SZ-1) -- 0)),
+    ("high",    "Int",          ((2*INT_SZ-1) -- INT_SZ)),
+    ("low",     "Int",          ((INT_SZ-1) -- 0))
+];
+
+cload (DIR^"mul.prog.fl");
+
+let muliplier_main =
+	bit_input clk reset.
+	// Inputs
+	bit_input req.
+	op_input opcode.
+	// Outputs
+	bit_output ack.
+	// Signals
+	signal_input sig_in.
+	signal_output sig_out.
+	// Internals
+	bit_internal alloc_req read_req write_req.
+	bit_internal alloc_ack read_ack write_ack.
+	addr_internal alloc_addr read_addr write_addr.
+	node_internal read_node write_node.
+	CELL "draw_hier multiplier2_main" [
+		multiplier clk reset req ack opcode
+			alloc_req alloc_ack alloc_addr
+			read_req read_ack read_addr read_node
+			write_req write_ack write_addr write_node,
+		memory_interface alloc_req read_req write_req
+			read_addr write_addr write_node
+			alloc_ack read_ack write_ack
+			alloc_addr read_node
+			sig_in sig_out
+	];

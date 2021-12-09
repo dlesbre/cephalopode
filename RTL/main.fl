@@ -1,0 +1,33 @@
+cload (DIR^"types.fl");
+cload (DIR^"ram.fl");
+cload (DIR^"rom.fl");
+cload (DIR^"initiator.fl");
+
+let tst =
+    bit_input	clk reset.
+    bit_output	done.
+    internal	fl_req fl_addr fl_rdy fl_data.
+    internal	mem_req mem_rw mem_addr mem_w_data mem_rdy mem_r_data.
+    CELL "tst" [
+	ROM clk reset fl_req fl_addr fl_rdy fl_data,
+	RAM clk reset mem_req mem_rw mem_addr mem_w_data mem_rdy mem_r_data,
+	Initiator clk reset
+		  fl_req fl_addr fl_rdy fl_data
+		  mem_req mem_rw mem_addr mem_w_data mem_rdy mem_r_data done
+];
+
+
+let v = STE_debug (pexlif2fsm (tst 'clk 'reset 'done));
+
+let N = 200;
+
+let ant =
+    "clk" is_clock N
+  and
+    "reset" is "1" for 2 cycles otherwise 0 until N cycles
+  and
+    mk_ROM_ant "paper.rom"
+;
+
+STE "-e" v [] ant [] [];
+

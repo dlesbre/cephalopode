@@ -1,0 +1,203 @@
+cload (DIR^"../types.fl");
+
+ENUM "node_gc_state" ["NGC_FREE", "NGC_NEW", "NGC_OLD", "NGC_LIVE"];
+
+
+let core_gc_fsm =
+    bit_input		    clk.
+    bit_input		    reset.
+    bit_input		    snap.
+    bit_input		    sweep.
+    bit_input		    mark.
+    bit_input		    alloc.
+    node_gc_state_output    ngc_state.
+    bit_output		    free.
+    bit_output		    is_marked.
+    CELL "gc_slice" [
+	(Moore_FSM "node_gc_fsm" clk ngc_state
+	    (reset, NGC_FREE)
+	    [
+		NGC_FREE	--- alloc   --- NGC_NEW,
+		NGC_NEW		--- snap    --- NGC_OLD,
+		NGC_OLD		--- sweep   --- NGC_FREE,
+		NGC_OLD		--- mark    --- NGC_LIVE,
+		NGC_LIVE	--- sweep   --- NGC_OLD
+	    ]
+	),
+	free <- is_NGC_FREE ngc_state,
+	is_marked <- mark '&' is_NGC_LIVE ngc_state
+];
+
+clet gc_fsm clk reset snap sweep mark alloc ngc_state free is_marked =
+    (fprintf stderr "Make gc_fsm\n") fseq
+    (core_gc_fsm clk reset snap sweep mark alloc ngc_state free is_marked)
+;
+
+let gc_slice_new =
+    bit_input		    clk.
+    bit_input		    reset.
+    bit_input		    snap.
+    bit_input		    sweep.
+    bit_input		    mark.
+    bit_input		    alloc.
+    node_gc_state_output    ngc_state.
+    bit_output		    free.
+    bit_output		    is_marked.
+    internal		    i_clk i_reset i_snap i_sweep i_mark i_alloc.
+    internal		    o_ngc_state o_free o_is_marked.
+    CELL "gc_slice" [
+	i_clk <- clk,
+	i_reset <- reset,
+	i_snap <- snap,
+	i_sweep <- sweep,
+	i_mark <- mark,
+	i_alloc <- alloc,
+	gc_fsm i_clk i_reset i_snap i_sweep i_mark i_alloc
+		o_ngc_state o_free o_is_marked,
+	ngc_state <- o_ngc_state,
+	free <- o_free,
+	is_marked <- o_is_marked
+];
+
+let gc_slice =
+    bit_input		    clk.
+    bit_input		    reset.
+    bit_input		    snap.
+    bit_input		    sweep.
+    bit_input		    mark.
+    bit_input		    alloc.
+    node_gc_state_output    ngc_state.
+    bit_output		    free.
+    bit_output		    is_marked.
+    CELL "gc_slice" [
+	(Moore_FSM "node_gc_fsm" clk ngc_state
+	    (reset, NGC_FREE)
+	    [
+		NGC_FREE	--- alloc   --- NGC_NEW,
+		NGC_NEW		--- snap    --- NGC_OLD,
+		NGC_OLD		--- sweep   --- NGC_FREE,
+		NGC_OLD		--- mark    --- NGC_LIVE,
+		NGC_LIVE	--- sweep   --- NGC_OLD
+	    ]
+	),
+	free <- is_NGC_FREE ngc_state,
+	is_marked <- mark '&' is_NGC_LIVE ngc_state
+];
+
+letrec cnt_free =
+    bit_list_input  inp_l.
+    eaddr_output    cnt.
+    eaddr_internal  top_cnt bot_cnt.
+    CELL "draw_hier cnt_free" (
+	inp_l = [] => [cnt <- '0] |
+	length inp_l = 1 => [ cnt <- (IF (hd inp_l) THEN '1 ELSE '0) ] |
+	let n = length inp_l in
+	let top = firstn (n/2) inp_l in
+	let bot = butfirstn (n/2) inp_l in
+	[
+	    cnt_free top top_cnt,
+	    cnt_free bot bot_cnt,
+	    cnt <- top_cnt '+' bot_cnt
+	]
+);
+
+letrec find_first_free =
+    bit_list_input  inp_l.
+    bit_output	    valid.
+    addr_output	    addr.
+    //
+    addr_internal   top_addr bot_addr high_addr.
+    bit_internal    top_valid bot_valid.
+    CELL "draw_hier find_first_free" (
+	inp_l = [] => [valid <- '0, addr <- '0] |
+	length inp_l = 1 => [ valid <- (hd inp_l), addr <- '0 ] |
+	let n = length inp_l in
+	let top = firstn (n/2) inp_l in
+	let bot = butfirstn (n/2) inp_l in
+	[
+	    find_first_free top top_valid top_addr,
+	    find_first_free bot bot_valid bot_addr,
+	    valid <- top_valid '|' bot_valid,
+	    high_addr <- ''(2**(log2 n-1)),
+	    addr <- (IF bot_valid THEN bot_addr ELSE (high_addr '|' top_addr))
+	]
+);
+
+
+letrec map5 fn (a:as) (b:bs) (c:cs) (d:ds) (e:es) =
+	    (fn a b c d e):(map5 fn as bs cs ds es)
+ /\    map5 fn [] [] [] [] [] = []
+ /\    map5 fn _ _ _ _ _ = error "Lists are of different length in map5"
+;
+
+let gc_array =
+    bit_input	    clk reset snap sweep.
+    bit_list_input  mark_l alloc_l.
+    bit_list_output is_free_l is_marked_l.
+    //
+    node_gc_state_list_internal NODES	    ngc_l.
+    CELL "draw_hier gc_array"
+	(map5 (gc_slice clk reset snap sweep)
+	      mark_l alloc_l ngc_l is_free_l is_marked_l)
+;
+
+let allocator =
+    bit_input		    clk.
+    bit_input		    reset.
+    //
+    bit_input		    snap.
+    bit_input		    sweep.
+    //
+    bit_input		    mark_req.
+    addr_input		    mark_addr.
+    //
+    bit_input		    alloc_req.
+    addr_output		    free_addr.
+    bit_output		    alloc_ack.
+    //
+    bit_output		    already_marked.
+    //
+    eaddr_output	    nbr_free.
+    //
+    bit_list_internal NODES mark_l alloc_l.
+    bit_list_internal NODES is_free_l is_marked_l.
+    bit_internal	    found_free.
+    CELL "draw_hier allocator" [
+	gc_array clk reset snap sweep mark_l alloc_l is_free_l is_marked_l,   
+	EN_DECODER_list mark_req mark_addr mark_l,
+	EN_DECODER_list alloc_req free_addr alloc_l,
+	find_first_free is_free_l found_free free_addr,
+	alloc_ack <- found_free '&' alloc_req,
+	already_marked <- (accumulate (defix '|') is_marked_l),
+	cnt_free is_free_l nbr_free
+];
+
+
+//let v = STE_debug (pexlif2fsm (allocator 'clk 'reset 'snap 'sweep
+//					     'mark_req 'mark_addr
+//					     'alloc_req
+//					     'alloc_ack 'free_addr
+//					     'already_marked
+//				))
+//;
+//v;
+//
+//let ant = 
+//    "clk" is_clock 20
+//  and
+//    "reset" is 1 for 1 cycle otherwise 0 until 20 cycles
+//  and
+//    "snap" is 0 for 20 cycles
+//  and
+//    "sweep" is 0 for 20 cycles
+//  and
+//    "mark_req" is 0 for 20 cycles
+//  and
+//    "alloc_req" is 0 for 3 cycles followed_by
+//		   1 for 7 cycles 
+//		   otherwise 0 until 20 cycles
+//;
+//
+//
+//STE "-e" v [] ant [] [];
+//

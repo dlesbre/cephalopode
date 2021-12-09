@@ -1,0 +1,114 @@
+name multiplier;
+protocol fourphase alwayson;
+
+// Simple multiprecision multiplication based on page 80 (numbered 818) of
+// https://link.springer.com/content/pdf/10.1007%2F978-1-4419-5906-5_39.pdf
+//
+// This performs the naive pen and paper multiplication
+// The one subtelty is that we do the additions instantly, so we only
+// allocate one result (and not N intermediate values which we would have to sum later)
+
+#include "types.inc"
+#include "mem.inc"
+
+define addr_a = opcode-->srcA;
+define addr_b = opcode-->srcB;
+define addr_res = opcode-->dest;
+
+//define addr_a = ("ADDR" :: addr);
+
+// Memory interface
+action mem_alloc:MemAlloc provided by external via fourphase alwayson;
+action mem_read:MemRead   provided by external via fourphase alwayson;
+action mem_write:MemWrite provided by external via fourphase alwayson;
+
+define zx = ("\\z. (ZX z)");
+define sx = ("\\z. (SX z)");
+define extend z is_top = if is_top then sx z else zx z;
+
+// Inputs
+//  - op-->srcA and op-->srcB are the numbers to multiply
+//  - op-->dest it the target address
+subroutine main : opcode:op -> ()
+{
+    // Variables
+    var addr addr_a_cur, addr_b_cur, addr_res_cur, addr_res_offset;
+    var node node_a, node_b, node_res;
+    var Int carry_int;
+    var bit initial, unset;
+    var bit a_end, b_end, res_end;
+
+    // Transient variables ("transient" flag not yet supported)
+    var dInt double_int;
+    var addr addr_res_next;
+
+    carry_int = 0;
+    initial = 1;
+    unset = 1;
+    addr_res_cur = addr_res;
+    addr_a_cur = addr_a;
+
+    a_end = 0;
+    while(~a_end)
+    {
+        --%<--
+        node_a = do mem_read addr_a_cur;
+        addr_a_cur = node_a-->laddr;
+        a_end = addr_a_cur == ADDR_END;
+        unset = 1;
+        addr_b_cur = addr_b;
+        b_end = 0;
+        while(~b_end)
+        {
+            --%<--
+            node_b = do mem_read addr_b_cur;
+            addr_b_cur = node_b-->laddr;
+            b_end = addr_b_cur == ADDR_END;
+            res_end = 0;
+            // calculate and store result
+            if (initial) {
+                    // First pass, nothing is allocated
+                    addr_res_next = do mem_alloc;
+                    node_res = 0;
+                    node_res-->laddr = addr_res_next;
+                    node_res-->"type" = G_INT;
+
+            } else {
+                    node_res = do mem_read addr_res_cur;
+                    // Always allocate one further
+                    if (node_res-->laddr == ADDR_END) {
+                            addr_res_next = do mem_alloc;
+                            node_res-->laddr = addr_res_next;
+                            res_end = 1;
+                    }
+            }
+            --%<--
+            addr_res_offset = if unset then node_res-->laddr else addr_res_offset;
+            unset = 0;
+
+            double_int = 0;
+            // Only consider top chunks to be signed
+            // All the rest is unsigned
+            double_int-->simple =
+                    (extend node_res-->int res_end) +
+                    ((extend node_a-->int a_end) * (extend node_b-->int b_end)) +
+                    (extend carry_int a_end);
+            carry_int = double_int-->high;
+            node_res-->int = double_int-->low;
+
+            do mem_write addr_res_cur node_res;
+
+            addr_res_cur = node_res-->laddr;
+        }
+
+        // store the carry
+        node_res-->int = carry_int;
+        node_res-->laddr = ADDR_END;
+        carry_int = 0;
+        do mem_write addr_res_cur node_res;
+        initial = 0;
+        addr_res_cur = addr_res_offset;
+    }
+
+    return;
+}

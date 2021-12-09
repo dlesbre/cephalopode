@@ -1,0 +1,480 @@
+name divider;
+protocol fourphase alwayson;
+
+#include "types.inc"
+#include "mem.inc"
+
+define addr_n = opcode-->srcB;
+define addr_d = opcode-->srcC;
+
+// macros
+define zx = "\\z. ZX z";
+define smallest_mask = ("\\z. smallest_mask z" :: Int -> Int);
+define get_bit = ("\\number.\\position.(number ~~ position)" :: Int -> int -> bit);
+define get_high_bit = ("\\number.(number ~~ INT_SZ)" :: eInt -> bit);
+define get_low_int = ("\\number.(number ~~~ ((INT_SZ-1) -- 0))" :: eInt -> Int);
+
+// constants
+define INT_SZ = "INT_SZ";
+define TOP_BIT = "top_bit";
+define TOP_BIT_POS = "INT_SZ - 1";
+
+// Combinatorial expressions
+define flip_r = (~r1_is_0) & n_is_negative;
+define flip_q = n_is_negative ^ d_is_negative;
+
+// Memory interface
+action mem_alloc:MemAlloc provided by external via fourphase alwayson;
+action mem_read:MemRead   provided by external via fourphase alwayson;
+action mem_write:MemWrite provided by external via fourphase alwayson;
+
+// divider interface
+// It is called with three nodes
+// - a function K to apply     (op-->srcA)
+// - an int, the numerator N   (op-->srcB)
+// - an int, the denominator D (op-->srcC)
+// - the rediraction node addr (op-->dest)
+//
+// It returns:
+// (APPLY (APPLY K q) r) if d != 0
+// NIL if d == 0
+//
+// The addresses are also returned to help with cleanup in the ALU
+subroutine main : opcode:op -> (zero_division_error:bit, addr_q:addr, addr_r1:addr)
+{
+
+		// Variables
+		var node node_d, node_n;
+		var addr addr_r2, addr_f;
+		var addr addr_d_cur, addr_r1_cur, addr_r2_cur, addr_n_cur, addr_q_cur, addr_nr_cur;
+		var addr addr_r1_prev, addr_r2_prev, addr_nr_prev, addr_nr_next;
+		var node node_r1, node_r2, node_nr, node_q, node_f;
+		var bit shift_carry, sub_carry;
+		var Int mask;
+		var bit short_d, n_is_negative, d_is_negative, r1_is_0, r2_is_0;
+		var bit neg_n_carry, neg_d_carry, flip_r_carry, add_q_carry, neg_q_carry;
+
+		// Transient variables (flag not supported yet)
+		var bit swap;
+		var Int t_int;
+		var addr t_addr_swap;
+		var node t_node;
+		var eInt t_shifted_r, t_subtracted_r;
+		var eInt t_eint;
+		var bit t_d_end;
+
+		// =====================================
+		// kludge init, not sure if bifrost bug or div bug
+		// =====================================
+		addr_nr_cur = ADDR_END;
+		addr_nr_next = ADDR_END;
+		addr_r2_cur = ADDR_END;
+		neg_d_carry = 0;
+		node_f = 0;
+		node_r1 = 0;
+		node_r2 = 0;
+		r1_is_0 = 0;
+		r2_is_0 = 0;
+		shift_carry = 0;
+		sub_carry = 0;
+
+		// =====================================
+		// Init
+		// =====================================
+
+		addr_d_cur = addr_d;
+		addr_n_cur = addr_n;
+		addr_q_cur = ADDR_END;
+		addr_r1_prev = ADDR_END;
+		addr_r2_prev = ADDR_END;
+		addr_r1 = ADDR_END;
+		addr_r2 = ADDR_END;
+		addr_q = ADDR_END;
+		addr_f = ADDR_END;
+		addr_nr_prev = ADDR_END;
+		zero_division_error = 0;
+		mask = 0;
+
+		node_q = 0;
+		node_q-->"type" = G_INT;
+		short_d = 0;
+		n_is_negative = 0;
+		d_is_negative = 0;
+
+		neg_n_carry = 1; // carry used to flip N -> -N
+		flip_r_carry = 0;
+		add_q_carry = 1;
+		neg_q_carry = 1;
+
+		// =====================================
+		// Read D + Alloc R1 and R2
+		// =====================================
+		// We start by allocating the space for the remainder
+		// We do that as we read D, since R < |D| we need at most as many chunks
+		// We allocate two remaiders as this allows the mainloop to be a bit faster
+		//
+		// Also check for D = 0, D = 1 to special subroutines
+		// Also check if D is negative
+
+		label read_d:
+
+			node_d = do mem_read addr_d_cur;
+			t_d_end = node_d-->laddr == ADDR_END;
+			short_d = t_d_end & addr_d_cur == addr_d;
+			d_is_negative = t_d_end & (get_bit node_d-->int TOP_BIT_POS);
+			if (node_d-->int == 0 & short_d) {
+				goto zero_division;
+			}
+
+			addr_r1_cur = do mem_alloc;
+			if (node_d-->int != 1 & short_d) {
+				// for short d only allocate one R
+				node_d-->int-->simple_Int = if d_is_negative then (~node_d-->int-->simple_Int + 1) else node_d-->int-->simple_Int;
+				addr_r1 = addr_r1_cur;
+				goto read_n;
+			}
+			node_r1 = 0;
+			node_r1-->"type" = G_INT;
+			node_r1-->laddr = addr_r1_prev;
+			do mem_write addr_r1_cur node_r1;
+
+			if (node_d-->int == 1 & short_d) {
+				// dividing by 1
+				addr_r1 = addr_r1_cur;
+				addr_q = addr_n;
+				goto final_nodes;
+			}
+
+			addr_r2_cur = do mem_alloc;
+			node_r2 = 0;
+			node_r2-->"type" = G_INT;
+			node_r2-->laddr = addr_r2_prev;
+			do mem_write addr_r2_cur node_r2;
+
+			addr_d_cur = node_d-->laddr;
+			addr_r1_prev = addr_r1_cur;
+			addr_r2_prev = addr_r2_cur;
+			if (addr_d_cur == ADDR_END) {
+				addr_r1 = addr_r1_cur;
+				addr_r2 = addr_r2_cur;
+				goto read_n;
+			}
+			else {
+				goto read_d;
+			}
+
+		// =====================================
+		// Read N + Write NR
+		// =====================================
+		// Next we read and flip N into NR
+		// Since the divider iterates through N from topmost to bottomost bit
+		// we need to store N in big endian format
+
+		label read_n:
+			node_n = do mem_read addr_n_cur;
+			addr_n_cur = node_n-->laddr;
+
+			node_nr = 0;
+			node_nr-->"type" = G_INT;
+			node_nr-->laddr = addr_nr_prev;
+			node_nr-->int = node_n-->int;
+
+			addr_nr_cur = do mem_alloc;
+
+			if (addr_n_cur == ADDR_END) {
+				n_is_negative = (get_bit node_n-->int TOP_BIT_POS);
+				addr_nr_next = addr_nr_prev; // used if rewriting
+				addr_nr_prev = ADDR_END;
+				addr_n_cur = addr_n; // reset in case of reread
+				if (n_is_negative) {
+					goto flip_n;
+				}
+				else {
+					goto loop_init;
+				}
+			}
+			else {
+				// We only write size(N) - 1 chunks for NR
+				// The topmost is simply stored in our registers
+				do mem_write addr_nr_cur node_nr;
+				addr_nr_prev = addr_nr_cur;
+			}
+			goto read_n;
+
+
+		// =====================================
+		// When N < 0, Reread N to write -NR
+		// =====================================
+		// When N is negative, we need to reread it to write -N (in NR)
+
+		label flip_n:
+			// here at first iteration:
+			//  - addr_nr_prev is 0
+			//  - addr_nr_cur is the new bottomost chunk (not written)
+			//  - addr_nr_next is the first written chunk
+			node_n = do mem_read addr_n_cur;
+			addr_n_cur = node_n-->laddr;
+
+			t_eint = (zx (~node_n-->int)) + (zx neg_n_carry);
+			neg_n_carry = get_high_bit t_eint;
+
+			node_nr = 0;
+			node_nr-->"type" = G_INT;
+			node_nr-->laddr = addr_nr_prev;
+			node_nr-->int = get_low_int t_eint;
+
+			if (addr_n_cur == ADDR_END) {
+				goto loop_init;
+			}
+			else {
+				// We only allocate and write size(N) - 1 chunks for NR
+				// The topmost is simply stored in our registers
+				do mem_write addr_nr_cur node_nr;
+				addr_nr_prev = addr_nr_cur;
+				addr_nr_cur  = addr_nr_next;
+				t_node = do mem_read addr_nr_cur;
+				addr_nr_next = t_node-->laddr; // only read for addr
+			}
+			goto flip_n;
+
+		// =====================================
+		// Divider loop
+		// =====================================
+		// This is the main division loop
+		// In summary, it proceeds as follows
+		// Init with R1 = 0, R2 = 0, Q = 0
+		//   In parrallel (can be done reading chunk by chunk)
+		//   Set R1 = R1 << 1 + N[i]
+		//   Set R2 = R1 - D
+		//   if R1 > D (<=> R2-->carry = 0 or R1-->carry = 1)
+		//     swap R1 and R2 (we just swap their addresses)
+		//     set Q[i] to 1
+		//
+		// the iterator i is the "mask"
+		// Every so often, we stop to read a new chunk of NR,
+		// write the current chunk of Q and reset it to 0.
+		//
+		// A small optimisation is to only write one of the topmost chunks
+		// of R1/R2, as by that time we know which one is the correct one.
+		//
+		// We allocate Q as we write it. This way we write big chunks first
+		// but end up with a little endian number
+		//
+		// There is a special procedure for "short_d" (smaller then 1 chunk)
+		// In that case we don't read or write D, R1 and R2, we simply
+		// use registers and only write the final result when done.
+		// This makes the small_d case a lot faster.
+
+
+		label loop_init:
+			t_int = (smallest_mask node_nr-->int);
+			mask = if t_int == 0 then 1 else t_int;
+
+		label loop_reset_d:
+			// We've reach the end of D and both R's,
+			// reset them to start position for next iteration
+			addr_d_cur = if short_d then ADDR_END else addr_d;
+			addr_r1_cur = addr_r1;
+			addr_r2_cur = addr_r2;
+			shift_carry = (node_nr-->int & mask) != 0;
+			sub_carry = 0;
+			neg_d_carry = 1;
+			r1_is_0 = 1;
+			r2_is_0 = 1;
+
+		label loop:
+			if (~short_d) {
+				node_d = do mem_read addr_d_cur;
+				node_r1 = do mem_read addr_r1_cur;
+				// flip sign of d when negative
+				t_eint = (zx (~node_d-->int)) + (zx neg_d_carry);
+				node_d-->int = if d_is_negative then get_low_int t_eint else node_d-->int;
+				neg_d_carry = (get_high_bit t_eint);
+				addr_d_cur = node_d-->laddr;
+			}
+			--%<--
+
+			t_shifted_r = ((zx node_r1-->int) << 1) + (zx shift_carry);
+			t_int = get_low_int t_shifted_r;
+			t_subtracted_r = (zx t_int) - (zx node_d-->int) - (zx sub_carry);
+			node_r1-->int = get_low_int t_shifted_r;
+			node_r2-->int = get_low_int t_subtracted_r;
+			shift_carry = get_high_bit t_shifted_r;
+			sub_carry   = get_high_bit t_subtracted_r;
+			r1_is_0 = r1_is_0 & (node_r1-->int == 0);
+			r2_is_0 = r2_is_0 & (node_r2-->int == 0);
+
+			if (addr_d_cur == ADDR_END) {
+				// We know which R is valid so we only write that one
+				swap = (~sub_carry) | shift_carry;
+				node_q-->int = if swap then (node_q-->int | mask) else node_q-->int;
+				r1_is_0 = if swap then r2_is_0 else r1_is_0;
+				if (~short_d) {
+					if (swap) {
+						node_r2-->laddr = ADDR_END; // We know R2's next address, no need to read it-->
+						do mem_write addr_r2_cur node_r2;
+						t_addr_swap = addr_r1;
+						addr_r1 = addr_r2;
+						addr_r2 = t_addr_swap;
+					}
+					else {
+						do mem_write addr_r1_cur node_r1;
+					}
+				}
+				else {
+					node_r1-->int = if swap then node_r2-->int else node_r1-->int;
+				}
+				--%<--
+				if (get_bit mask 0) {
+					if (addr_q == ADDR_END & (~flip_q) & (get_bit node_q-->int TOP_BIT_POS)) {
+						// Before the first write, if Q's top bit is set
+						// alloc extra chunk to avoid negative Q
+						addr_q = do mem_alloc;
+						node_n = 0; // reusing node_n because why not...
+						node_n-->laddr = ADDR_END;
+						node_n-->"type" = G_INT;
+						do mem_write addr_q node_n;
+					}
+					--%<--
+					node_q-->laddr = addr_q;
+					addr_q = addr_nr_cur;
+					do mem_write addr_q node_q;
+					addr_nr_cur = node_nr-->laddr;
+					if (addr_nr_cur == ADDR_END) {
+						goto end_clean_r;
+					}
+					node_q-->int = 0;
+					node_nr = do mem_read addr_nr_cur;
+					mask = TOP_BIT;
+				} else {
+					mask-->simple_Int = mask-->simple_Int >> 1;
+				}
+				goto loop_reset_d;
+			}
+			else {
+				// We write both R's when not at the end of d
+				// Never reached for short d
+				t_node = do mem_read addr_r2_cur; // we need R2's next address
+				node_r2-->laddr = t_node-->laddr;
+				do mem_write addr_r1_cur node_r1;
+				do mem_write addr_r2_cur node_r2;
+				addr_r1_cur = node_r1-->laddr;
+				addr_r2_cur = node_r2-->laddr;
+				goto loop;
+			}
+
+		// =====================================
+		// Output cleanup
+		// =====================================
+		// This is needed when N or D is negative,
+		// As we started by calculating the values of Q R
+		// for the absolute values of N and D.
+		//
+		// For short_d this is also where we write R since we
+		// haven't done so yet.
+		//
+		// The changes to Q and R are:
+		//  - if (N < 0 and R != 0) set R = abs(D)-R and Q = Q+1
+		//  - if (N < 0 xor D < 0) set Q = -Q
+		// in that order
+
+		label end_clean_r:
+			if (short_d) {
+				// We haven't written R yet for short D
+				node_r1-->laddr = 0;
+				node_r1-->"type" = G_INT;
+				node_r1-->int-->simple_Int = if flip_r
+					// d has been negated at this point
+					then (node_d-->int-->simple_Int - node_r1-->int-->simple_Int)
+					else node_r1-->int-->simple_Int;
+				do mem_write addr_r1 node_r1;
+				if (flip_r) {
+					goto end_clean_q;
+				}
+			}
+			else {
+				if (flip_r) {
+					// We need to replace R' = abs(D) - R
+					addr_d_cur = addr_d;
+					addr_r1_cur = addr_r1;
+					neg_d_carry = 1;
+					goto end_flip_r;
+				}
+			}
+			if (flip_q) {
+				goto end_clean_q;
+			}
+			goto final_nodes;
+
+		label end_clean_q:
+			addr_q_cur = addr_q;
+		label end_flip_q:
+			// we write a new value of Q chosen between
+			//  Q+1, -Q, -(Q+1) depending on flip_n and flip_r
+			node_q = do mem_read addr_q_cur;
+
+			t_eint = (zx node_q-->int) + (zx add_q_carry);
+			add_q_carry = get_high_bit t_eint;
+			t_int = if flip_r then get_low_int t_eint else node_q-->int;
+			t_eint = (zx (~t_int)) + (zx neg_q_carry);
+			neg_q_carry = get_high_bit t_eint;
+			node_q-->int = if flip_q then get_low_int t_eint else t_int;
+
+			do mem_write addr_q_cur node_q;
+			addr_q_cur = node_q-->laddr;
+			if (addr_q_cur == ADDR_END) {
+				goto final_nodes;
+			}
+			goto end_flip_q;
+
+		label end_flip_r:
+			// write R = abs(D) - R
+			node_d = do mem_read addr_d_cur;
+			node_r1 = do mem_read addr_r1_cur;
+			// flip sign of d when negative
+			t_eint = (zx (~node_d-->int)) + (zx neg_d_carry);
+			node_d-->int = if d_is_negative then get_low_int t_eint else node_d-->int;
+			neg_d_carry = get_high_bit t_eint;
+
+			t_eint = (zx node_d-->int) - ((zx node_r1-->int) + (zx flip_r_carry));
+			node_r1-->int = get_low_int t_eint;
+			flip_r_carry = get_high_bit t_eint;
+			do mem_write addr_r1_cur node_r1;
+			addr_d_cur = node_d-->laddr;
+			addr_r1_cur = node_r1-->laddr;
+			if (addr_d_cur == ADDR_END) {
+				goto end_clean_q;
+			}
+			goto end_flip_r;
+
+		// =====================================
+		// Final nodes
+		// =====================================
+		// We returns:
+		// (APPLY (APPLY K q) r) if d != 0
+		// NIL if d == 0
+		// The topmost node is aldready allocated (op-->dest)
+		// the innermost apply isn't though
+
+
+		label final_nodes:
+			addr_f = do mem_alloc;
+			node_f = 0;
+			node_f-->"type" = G_APPLY;
+			node_f-->laddr = opcode-->srcA;
+			node_f-->raddr = addr_q;
+			do mem_write addr_f node_f;
+			node_f = 0;
+			node_f-->"type" = G_APPLY;
+			node_f-->laddr = addr_f;
+			node_f-->raddr = addr_r1;
+			do mem_write opcode-->dest node_f;
+			return;
+
+		label zero_division:
+			zero_division_error = 1;
+			node_f = 0;
+			node_f-->"type" = G_NIL;
+			do mem_write opcode-->dest node_f;
+			return;
+}

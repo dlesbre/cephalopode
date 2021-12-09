@@ -1,0 +1,331 @@
+cload (DIR^"rtypes.fl");
+cload (DIR^"reduction.fsm.fl");
+cload (DIR^"decoder.fl");
+cload (DIR^"combinator.fl");
+cload (DIR^"primitive.fl");
+
+let arg_array =
+    bit_input		clk.
+    bit_input		write.
+    arg_cnt_input	idx.
+    addr_input		din.
+    addr_list_output array. //size = MAX_ARITY
+    //
+    bit_list_internal MAX_ARITY wr_sel.
+    bit_list_internal MAX_ARITY rd_sel.
+    CELL "draw_hier mem_array" (
+	(map2 (\e.\do.  re_ff_en clk e din do) wr_sel array)
+	@ 
+	[
+	    EN_DECODER_list write idx wr_sel
+	]
+);
+
+let alloc_addr_array =
+    bit_input		clk.
+    bit_input		write.
+    alloc_cnt_input	idx. //for reading AND writing
+    addr_input		din.
+    addr_output		dout.    
+    addr_list_output array. //size = MAX_ALLOCS
+    //
+    bit_list_internal MAX_ALLOCS wr_sel.
+    bit_list_internal MAX_ALLOCS rd_sel.
+    CELL "draw_hier mem_array" (
+	(map2 (\e.\do.  re_ff_en clk e din do) wr_sel array)
+	@ 
+	[
+	    EN_DECODER_list write idx wr_sel,
+	    SELECT_list array idx dout
+	]
+);
+
+let alloc_data_array =
+    bit_input           clk.
+    bit_input           write.
+    alloc_cnt_input     idx. //for reading
+    node_list_input     din. //size = MAX_ALLOCS
+    node_output         dout.
+    //
+    node_list_internal MAX_ALLOCS array.
+    bit_list_internal MAX_ALLOCS rd_sel.
+    CELL "draw_hier mem_array" (
+	(map2 (\di.\do.  re_ff_en clk write di do) din array)
+	@ 
+	[
+	    SELECT_list array idx dout
+	]
+);
+
+let reduction_unit =
+
+    // basics
+    bit_input clk reset.
+
+    // memory for reduction unit
+    bit_input mem_rw_ack mem_alloc_ack.
+    addr_input mem_addr_in.
+    node_input mem_data_in.
+    bit_output mem_read_req mem_write_req mem_alloc_req.
+    addr_output mem_addr_out.
+    node_output mem_data_out.
+
+    // second port for primitive unit
+    bit_input mem2_rw_ack mem2_alloc_ack.
+    addr_input mem2_addr_in.
+    node_input mem2_data_in.
+    bit_output mem2_read_req mem2_write_req mem2_alloc_req.
+    addr_output mem2_addr_out.
+    node_output mem2_data_out.
+
+    // stack
+    bit_input stack_ack stack_nack.
+    addr_input stack_spine_addr_in stack_arg_addr_in.
+    bit_output stack_push_req stack_pop_req.
+    addr_output stack_spine_addr_out stack_arg_addr_out.
+
+    // other
+    bit_input reducto. //allow reduction?
+    bit_input jmp. //jump?
+    addr_input jmp_addr. //address to jump to
+    bit_output between_jobs. //not reducing at the moment?
+
+    //
+    bit_input	empty_stack.
+    bit_output	evaluation_done.
+
+    //
+
+    // gp and node
+    addr_internal gp.
+    node_internal next_node_data node_data.
+        
+    bit_internal fetch.
+    // arguments, allocs
+    arg_cnt_internal arg_idx.
+    alloc_cnt_internal alloc_idx.
+    addr_list_internal MAX_ARITY arg_addr_arr.
+    addr_list_internal MAX_ALLOCS alloc_addr_arr.
+
+    // results and writeback
+    bit_internal load_results.
+    node_list_internal MAX_ALLOCS next_alloc_data_arr. 
+    bit_internal next_overwrite_redex overwrite_redex.
+    node_internal next_redex_data redex_data.
+    addr_internal alloc_addr. //selected from alloc_addr_arr
+    node_internal alloc_data. //selected from alloc_data_arr
+    addr_internal swap_left.
+    addr_internal swap_right.
+    node_internal swap_data.
+
+    // outputs from decoder
+    bit_internal is_apply is_comb is_prim is_cons is_nil.
+    arg_cnt_internal arity.
+    alloc_cnt_internal to_alloc.
+    addr_internal left_child right_child.
+
+    // computed from decoder output
+    bit_internal arity_zero no_alloc.
+    alloc_cnt_internal max_alloc_idx.
+    arg_cnt_internal max_arg_idx.
+    bit_internal last_arg last_alloc.
+    prims_internal prim.
+    combinator_internal comb.
+
+    // outputs from comb unit
+    bit_internal comb_ack.
+    node_internal comb_result_redex.
+    bit_internal comb_result_overwrite_redex.
+    node_list_internal MAX_ALLOCS comb_result_allocs.
+
+    // mem for prim unit
+    signal_internal prim_sig_in prim_sig_out.
+    
+    // outputs from prim unit
+    bit_internal prim_ack.
+    node_internal prim_result_redex.
+    bit_internal prim_result_overwrite_redex.
+    node_list_internal MAX_ALLOCS prim_result_allocs.
+
+    // outputs from reduction fsm not included above
+    bit_internal comb_req.
+    bit_internal dec_alloc_idx.
+    bit_internal go_left.
+    bit_internal inc_arg_idx.
+    bit_internal load_alloc_addr.
+    bit_internal load_alloc_idx.
+    bit_internal load_comb_results.
+    bit_internal load_node_data.
+    bit_internal load_pop_arg.
+    bit_internal load_pop_gp.
+    bit_internal load_prim_results.
+    bit_internal load_swap_left.
+    bit_internal load_swap_right.
+    bit_internal prim_req.
+    bit_internal put_alloc_addr.
+    bit_internal put_alloc_data.
+    bit_internal put_gp_addr.
+    bit_internal put_redex_data.
+    bit_internal put_swap_data.
+    bit_internal reset_arg_idx.
+
+    CELL "draw_hier reduction" ([
+
+        // FSM
+        reduction_fsm
+	    // Inputs
+	    clk
+	    reset
+	    arity_zero
+	    comb_ack
+	    empty_stack
+	    is_apply
+	    is_comb
+	    is_prim
+	    jmp
+	    last_alloc
+	    last_arg
+	    mem_alloc_ack
+	    mem_rw_ack
+	    no_alloc
+	    prim_ack
+	    reducto
+	    overwrite_redex
+	    stack_ack
+	    stack_nack
+	    // Outputs
+	    between_jobs
+	    comb_req
+	    dec_alloc_idx
+	    evaluation_done
+	    fetch
+	    go_left
+	    inc_arg_idx
+	    load_alloc_addr
+	    load_alloc_idx
+	    load_comb_results
+	    load_node_data
+	    load_pop_arg
+	    load_pop_gp
+	    load_prim_results
+	    load_swap_left
+	    load_swap_right
+	    mem_alloc_req
+	    mem_read_req
+	    mem_write_req
+	    prim_req
+	    put_alloc_addr
+	    put_alloc_data
+	    put_gp_addr
+	    put_redex_data
+	    put_swap_data
+	    reset_arg_idx
+	    stack_pop_req
+	    stack_push_req
+
+        // COMB UNIT
+        , combinator_unit comb gp arg_addr_arr alloc_addr_arr comb_result_allocs comb_result_redex
+        , comb_ack <- comb_req
+        , comb_result_overwrite_redex <- '1
+
+        // PRIM UNIT
+        , prims_unit clk reset prim_req prim gp arg_addr_arr alloc_addr_arr prim_ack prim_result_redex prim_result_overwrite_redex prim_result_allocs prim_sig_in prim_sig_out
+        , prim_sig_in <-
+            ('0<--alloc ? mem2_alloc_ack
+               <--read ? mem2_rw_ack
+               <--write ? mem2_rw_ack
+               <--node ? mem2_data_in
+               <--addr ? mem2_addr_in)
+        , mem2_alloc_req <- (prim_sig_out-->alloc)
+        , mem2_read_req <- (prim_sig_out-->read)
+        , mem2_write_req <- (prim_sig_out-->write)
+        , mem2_addr_out <- (prim_sig_out-->addr)
+        , mem2_data_out <- (prim_sig_out-->node)
+
+        // IO MUXING
+        , CASE mem_addr_out [
+            put_gp_addr --- gp,
+            put_alloc_addr --- alloc_addr
+            ] 'X
+        , CASE mem_data_out [
+            put_redex_data --- redex_data,
+            put_alloc_data --- alloc_data,
+            put_swap_data  --- swap_data
+            ] 'X
+        , stack_spine_addr_out <- gp
+        , stack_arg_addr_out <- right_child
+
+        // GRAPH POINTER
+        // if you can reduce it slowly, you can reduce it quickly 🎻🐝
+        , STATE clk gp [
+            reset       --- '0,
+            jmp         --- jmp_addr,
+            load_pop_gp --- stack_spine_addr_in,
+            go_left     --- left_child
+            ]
+
+        // CURRENT NODE (note: next_node_data is used by the decoder!)
+        , next_node_data <- (IF load_node_data THEN mem_data_in ELSE node_data)
+        , re_ff clk next_node_data node_data
+
+        // DECODER
+        , decoder
+            next_node_data
+            is_comb is_prim is_apply is_cons is_nil
+            left_child right_child
+            arity to_alloc
+            comb prim
+            
+        , arity_zero <- arity '=' '0
+        , max_arg_idx <- arity '-' '1
+        , last_arg <- arg_idx '=' max_arg_idx
+        , no_alloc <- to_alloc '=' '0
+        , max_alloc_idx <- to_alloc '-' '1
+        , last_alloc <- alloc_idx '=' '0
+
+        // ARGUMENT INDEX
+        , STATE clk arg_idx [
+            reset_arg_idx --- '0,
+            inc_arg_idx   --- arg_idx '+' '1
+            ]
+
+        // ALLOCATION INDEX
+        , STATE clk alloc_idx [
+            load_alloc_idx --- max_alloc_idx,
+            dec_alloc_idx  --- alloc_idx '-' '1
+            ]
+
+        // ARGUMENT ARRAY
+        , arg_array clk load_pop_arg arg_idx stack_arg_addr_in arg_addr_arr
+        
+        // ALLOCATION ADDRESS ARRAY
+        , alloc_addr_array clk load_alloc_addr alloc_idx mem_addr_in alloc_addr alloc_addr_arr
+
+        // SWAP RULE
+        , re_ff_en clk load_swap_left gp swap_left
+        , re_ff_en clk load_swap_right stack_arg_addr_in swap_right
+        , swap_data-->type <- G_APPL
+        , swap_data-->laddr <- swap_right
+        , swap_data-->raddr <- swap_left
+
+        // RESULTS (REDEX, ALLOCATION DATA)
+        , load_results <- load_comb_results '|' load_prim_results
+        , re_ff_en clk load_results next_redex_data redex_data
+        , re_ff_en clk load_results next_overwrite_redex overwrite_redex
+        , alloc_data_array clk load_results alloc_idx next_alloc_data_arr alloc_data
+        , next_redex_data <-
+            (IF load_comb_results
+                THEN comb_result_redex
+                ELSE prim_result_redex)
+        , next_overwrite_redex <-
+            (IF load_comb_results
+                THEN comb_result_overwrite_redex
+                ELSE prim_result_overwrite_redex)
+        ]
+        @
+        map3 (\o.\c.\p. o <- (IF load_comb_results THEN c ELSE p))
+            next_alloc_data_arr
+            comb_result_allocs
+            prim_result_allocs
+        );
+

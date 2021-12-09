@@ -1,0 +1,819 @@
+// This file contains multiple tests for the ALU
+// Test are run on a preset number of chunk using
+// STE's symbolic trajectory evaluation, ensuring
+// correctness of all configurations.
+//
+// File Sections: (navigate with $)
+//  - Utilities - constants, useful functions...
+//  - Test circuit - the circuit wrapped around the ALU for testing
+//  - Int variables - variable definitions
+//  - Test function - the main test generator
+//  - Variable order - usefull var_order for the BDD
+//  - Test consequence - functions to build the consequence passed to STE
+//  - Comparator unit tests
+//  - Logical unit tests
+//  - Arithmetic unit tests
+//  - Running the tests
+
+cload (DIR^"main.fl");
+cload (DIR^"test_memory.fl");
+
+
+// ================================================
+// § Utilities
+// ================================================
+
+
+let RAM_name = "i2/ram";
+
+// g_type values
+let g_type_bv x = fixed_bv2list (get_hw_type_size "g_type") T (int2bv x);
+let G_INDIR_bv = g_type_bv 3;
+let G_INT_bv   = g_type_bv (-4);
+let G_NIL_bv   = g_type_bv (-2);
+let G_APPL_bv  = g_type_bv 0;
+
+let ADDR_END = 0;
+
+let bv_0  = int2bv 0;
+let bv_1  = int2bv 1;
+let bv_n1 = int2bv (-1);
+
+// Non-Lazy and
+let nl_AND a b = a => b | (b AND F);
+infix 4 nl_AND;
+
+// Concatenates chunk to form the full integer
+// Smallest chunks first (little endian)
+let bv_full_int chunks =
+	letrec make_bv_int ([]) = []
+			/\ make_bv_int (t:q) = (make_bv_int q)@(fixed_bv2list INT_SZ F t) in
+	list2bv (make_bv_int chunks);
+
+// Returns a specific bit from a bitvector.
+// Sign extends or zero extends when the bitvector is too short
+let bv_getbit bit sign_ext bv =
+	letrec runner i (t:[]) = i = bit => t | (sign_ext => t | F)
+	    /\ runner i (t:q) = i = bit => t | runner (i+1) q
+	in runner 0 (rev (bv2list bv));
+
+// BV condition to check whether an integer is clean based on top two chunks
+let well_formed top_int prev_int =
+	let top_bit = bv_getbit (INT_SZ-1) F prev_int in
+	((bv_neq top_int bv_0) OR top_bit) AND ((bv_neq top_int bv_n1) OR NOT top_bit);
+
+// Circuit condition to check whether an integer is clean based on top two nodes
+let is_clean top_node prev_node =
+	(top_node-->int '!=' Int_zero '|' prev_node-->int-->msb)
+	'&' (top_node-->int '!=' Int_neg_one '|' ('~'prev_node-->int-->msb));
+
+
+// ================================================
+// § Test circuit
+// ================================================
+0;
+
+
+// An 8 chunk integer (result of ADD of MUL...)
+STRUCT "large_Int" (8*INT_SZ) [
+	("chunk_0", "Int", (INT_SZ-1 -- 0)),
+	("chunk_1", "Int", (2*INT_SZ-1 -- INT_SZ)),
+	("chunk_2", "Int", (3*INT_SZ-1 -- 2*INT_SZ)),
+	("chunk_3", "Int", (4*INT_SZ-1 -- 3*INT_SZ)),
+	("chunk_4", "Int", (5*INT_SZ-1 -- 4*INT_SZ)),
+	("chunk_5", "Int", (6*INT_SZ-1 -- 5*INT_SZ)),
+	("chunk_6", "Int", (7*INT_SZ-1 -- 6*INT_SZ)),
+	("chunk_7", "Int", (8*INT_SZ-1 -- 7*INT_SZ))
+];
+
+
+// Reads a linked integer from the RAM (up to 8 chunks in length)
+// And checks wether or not it is clean (any useless extra chunks)
+// Inputs:
+//   <addr_0 (addr)>     the first addr to read
+//   <ram (RAM)>         the RAM
+// Outputs:
+//   <value (large_Int)> the read value
+//   <is_clean (bit)>    does the integer have any extra top chunks ?
+let linked_integer_reader =
+	addr_input addr_0.
+	RAM_input ram.
+	large_Int_output value.
+	bit_output value_is_clean. // Are there any extra redundant chunks ?
+	bit_output value_is_int.   // Are all nodes of type G_INT ?
+	node_internal node_0 node_1 node_2 node_3 node_4 node_5 node_6 node_7.
+	bit_internal stop_0 stop_1 stop_2 stop_3 stop_4 stop_5 stop_6 stop_7 stop_8.
+	bit_internal is_int_0 is_int_1 is_int_2 is_int_3 is_int_4 is_int_5 is_int_6 is_int_7.
+	Int_internal extension_int.
+	bit_internal is_negative.
+	CELL "draw_hier linked_integer_reader" [
+		// Extract nodes from RAM to get them for STE simulation
+		Read_RAM ram (addr2eaddr '0 addr_0) node_0,
+		Read_RAM ram (addr2eaddr '0 (node_0-->laddr)) node_1,
+		Read_RAM ram (addr2eaddr '0 (node_1-->laddr)) node_2,
+		Read_RAM ram (addr2eaddr '0 (node_2-->laddr)) node_3,
+		Read_RAM ram (addr2eaddr '0 (node_3-->laddr)) node_4,
+		Read_RAM ram (addr2eaddr '0 (node_4-->laddr)) node_5,
+		Read_RAM ram (addr2eaddr '0 (node_5-->laddr)) node_6,
+		Read_RAM ram (addr2eaddr '0 (node_6-->laddr)) node_7,
+		// Where does the number stop ?
+		stop_0 <- addr_0 '=' addr_end,
+		stop_1 <- (node_0-->laddr '=' addr_end) '|' stop_0,
+		stop_2 <- (node_1-->laddr '=' addr_end) '|' stop_1,
+		stop_3 <- (node_2-->laddr '=' addr_end) '|' stop_2,
+		stop_4 <- (node_3-->laddr '=' addr_end) '|' stop_3,
+		stop_5 <- (node_4-->laddr '=' addr_end) '|' stop_4,
+		stop_6 <- (node_5-->laddr '=' addr_end) '|' stop_5,
+		stop_7 <- (node_6-->laddr '=' addr_end) '|' stop_6,
+		stop_8 <- (node_7-->laddr '=' addr_end) '|' stop_7,
+		CASE is_negative [
+			stop_0 --- ('0),
+			stop_1 --- (node_0-->int-->msb),
+			stop_2 --- (node_1-->int-->msb),
+			stop_3 --- (node_2-->int-->msb),
+			stop_4 --- (node_3-->int-->msb),
+			stop_5 --- (node_4-->int-->msb),
+			stop_6 --- (node_5-->int-->msb),
+			stop_7 --- (node_6-->int-->msb),
+			stop_8 --- (node_7-->int-->msb)
+		] '0,
+		extension_int <- (IF is_negative THEN Int_neg_one ELSE Int_zero),
+		value <- '0<--chunk_0 ? (IF stop_0 THEN extension_int ELSE (node_0-->int))
+		           <--chunk_1 ? (IF stop_1 THEN extension_int ELSE (node_1-->int))
+		           <--chunk_2 ? (IF stop_2 THEN extension_int ELSE (node_2-->int))
+		           <--chunk_3 ? (IF stop_3 THEN extension_int ELSE (node_3-->int))
+		           <--chunk_4 ? (IF stop_4 THEN extension_int ELSE (node_4-->int))
+		           <--chunk_5 ? (IF stop_5 THEN extension_int ELSE (node_5-->int))
+		           <--chunk_6 ? (IF stop_6 THEN extension_int ELSE (node_6-->int))
+		           <--chunk_7 ? (IF stop_7 THEN extension_int ELSE (node_7-->int)),
+		CASE value_is_clean [
+			stop_0 --- ('1),
+			stop_1 --- ('1),
+			stop_2 --- (is_clean node_1 node_0),
+			stop_3 --- (is_clean node_2 node_1),
+			stop_4 --- (is_clean node_3 node_2),
+			stop_5 --- (is_clean node_4 node_3),
+			stop_6 --- (is_clean node_5 node_4),
+			stop_7 --- (is_clean node_6 node_5),
+			stop_8 --- (is_clean node_7 node_6)
+		] '0,
+		is_int_7 <- (node_7-->type '=' G_INT),
+		is_int_6 <- (node_6-->type '=' G_INT) '&' (stop_7 '|' is_int_7),
+		is_int_5 <- (node_5-->type '=' G_INT) '&' (stop_6 '|' is_int_6),
+		is_int_4 <- (node_4-->type '=' G_INT) '&' (stop_5 '|' is_int_5),
+		is_int_3 <- (node_3-->type '=' G_INT) '&' (stop_4 '|' is_int_4),
+		is_int_2 <- (node_2-->type '=' G_INT) '&' (stop_3 '|' is_int_3),
+		is_int_1 <- (node_1-->type '=' G_INT) '&' (stop_2 '|' is_int_2),
+		is_int_0 <- (node_0-->type '=' G_INT) '&' (stop_1 '|' is_int_1),
+		value_is_int <- stop_0 '|' is_int_0
+	];
+
+// block plugging the ALU into our fake memory
+// Inputs:
+//   <clk (bit)>        the clock
+// Used by the test memory
+//   <set_memory (bit)> when high, reset the internal RAM and free addr to
+//                      the values in the two next args
+//   <ram_in (RAM)>     initial state of the RAM
+//   <ram_max_addr (addr)> the first free address (all addresses above are free to allocate)
+// ALU inputs:
+//   <reset (bit)>
+//   <op_req (bit)>
+//   <op_type (prims)>
+//   <redex_addr (addr)>
+//   <a_src_addr (addr)>
+//   <b_src_addr (addr)>
+//   <c_src_addr (addr)>
+//   <d_src_addr (addr)>
+let ALU_tester =
+	bit_input clk.
+	// Memory inputs
+	bit_input set_memory.
+	RAM_input ram_in.
+	addr_input ram_max_addr.
+	// ALU inputs
+	bit_input reset op_req.
+	prims_input op_type.
+	addr_input  redex_addr.
+	addr_input  a_src_addr.
+	addr_input  b_src_addr.
+	addr_input  c_src_addr.
+	addr_input  d_src_addr.
+	// Outputs
+	bit_output  op_ack.
+	bit_output  overwrite_redex.
+	node_output new_redex_value.
+	// Internals
+	signal_internal sig_in sig_out.
+	RAM_internal ram.
+	large_Int_internal redex_int.
+	bit_internal redex_int_is_clean redex_int_is_int.
+	large_Int_internal Q.
+	bit_internal Q_is_clean Q_is_int.
+	large_Int_internal R.
+	bit_internal R_is_clean R_is_int.
+	node_internal redex_node apply_node.
+	CELL "draw_hier ALU_tester" [
+		ALU clk reset op_req op_type
+			redex_addr a_src_addr b_src_addr c_src_addr d_src_addr
+			op_ack overwrite_redex new_redex_value
+			sig_in sig_out,
+		ideal_memory2 clk set_memory ram_in ram_max_addr
+			sig_out sig_in ram,
+		linked_integer_reader redex_addr ram
+			redex_int redex_int_is_clean redex_int_is_int,
+		// The divider returns two ints pointed from the node in REDEX
+		Read_RAM ram (addr2eaddr '0 redex_addr) redex_node,
+		Read_RAM ram (addr2eaddr '0 (redex_node-->laddr)) apply_node,
+		linked_integer_reader (redex_node-->raddr) ram R R_is_clean R_is_int,
+		linked_integer_reader (apply_node-->raddr) ram Q Q_is_clean Q_is_int
+	];
+
+let ALU_tester_pexlif = ALU_tester 'clk 'set_memory 'ram_in 'ram_max_addr
+	'reset 'op_req 'op_type
+	'redex_addr 'a_src_addr 'b_src_addr 'c_src_addr 'd_src_addr
+	'op_ack 'overwrite_redex 'new_redex_value;
+let ALU_tester_fsm    = pexlif2fsm ALU_tester_pexlif;
+let ALU_tester_vis    = STE_debug ALU_tester_fsm;
+let ALU_tester_fanim  = draw_fanin ALU_tester_vis (0) 100 [
+	"op_ack",	"overwrite_redex", "new_redex_value[14:0]"
+];
+
+let ALU_tester_waveform vis = add_waveform vis [ "op_ack"
+	, "overwrite_redex", "new_redex_value[14:0]", "i1/c_answer"
+	, "sig_out[23]", "sig_out[22]", "sig_out[21]", "sig_out[20:6]"
+	, "sig_out[5:0]", "sig_out[20:15]", "sig_out[14:9]", "sig_out[8:6]"
+	, "sig_in[23]", "sig_in[22]", "sig_in[21]", "sig_in[20:6]"
+	, "sig_in[5:0]", "sig_in[20:15]", "sig_in[14:9]", "sig_in[8:6]"
+	// , "i1/i18/i6/i1/step[4:0]" // adder state
+	// , "i1/i18/i7/i1/i1/state_multiplier[3:0]", "i1/i18/i7/i1/i1/var_node_res[14:0]"
+	// , "i1/i18/i7/i1/i1/var_node_res[14:9]", "i1/i18/i7/i1/i1/var_carry_int[5:0]"
+	// , "i1/i18/i7/i1/i1/var_node_a[14:9]", "i1/i18/i7/i1/i1/var_node_b[14:9]"
+	// , "i1/i18/i7/i1/i1/var_addr_res_offset[5:0]"
+];
+
+
+// ================================================
+// § Int variables
+// ================================================
+0;
+
+let A0 = bv_variable "A0[5:0]";
+let A1 = bv_variable "A1[5:0]";
+let A2 = bv_variable "A2[5:0]";
+let A3 = bv_variable "A3[5:0]";
+
+// A = A3 + chunk_size*A2 + chunk_size^2*A1 + chunk_size^3*A0
+// Yes this numbering is weird but it's so when I only use 1 chunk
+// I only use A0 (and not A3, which would be more confusing)
+let A = [A3, A2, A1, A0];
+
+let B0 = bv_variable "B0[5:0]";
+let B1 = bv_variable "B1[5:0]";
+let B2 = bv_variable "B2[5:0]";
+let B3 = bv_variable "B3[5:0]";
+
+let B = [B3, B2, B1, B0];
+
+
+// ================================================
+// § Test inputs
+// ================================================
+0;
+
+
+let mk_inputs steps op_type redex_addr a_src_addr b_src_addr c_src_addr d_src_addr =
+	"clk" is_clock steps
+	and "set_memory" is "1" for 2 phases followed_by "0" for (steps-2) phases
+	and "reset" is "1" for 4 phases followed_by "0" for (steps-4) phases
+	and "op_req" is "0" for 4 phases followed_by "1" for (steps-4) phases
+	and "op_type[3:0]" is op_type for steps phases
+	and "redex_addr[5:0]" is redex_addr for steps phases
+	and "a_src_addr[5:0]" is a_src_addr for steps phases
+	and "b_src_addr[5:0]" is b_src_addr for steps phases
+	and "c_src_addr[5:0]" is c_src_addr for steps phases
+	and "d_src_addr[5:0]" is d_src_addr for steps phases;
+
+// Int variables
+
+// returns function (hd list) if list else default
+let next_head default function ([]) = default
+ /\ next_head default function (t:q) = function t;
+
+// Links a number in the ram
+// Argument is a list of (addr, value) pairs
+letrec ram_link steps ([]) = []
+    /\ ram_link steps ((addr, value):t) =
+		let desc = sprintf "%s[%s]" RAM_name addr in
+		(desc^"[14:9]") is value for steps phases and
+		(desc^"[8:3]") is (next_head "0" (fst) t) for steps phases and
+		(desc^"[2:0]") is G_INT for steps phases and (ram_link steps t);
+
+// newly allocated addresses start here - 0x29
+let ADDR_ALLOC = "41";
+// The first address to write to - 0x28
+let ADDR_REDEX = "40";
+// 0x11
+let ADDR_FREE  = 9;
+
+
+// Ram containing two arbitrary four chunk numbers
+// Use partial address for shorter number
+let init_ram steps = "ram_max_addr[5:0]" is ADDR_ALLOC for steps phases
+	// used for the divider when checking division by 0...
+	and (RAM_name^"[0][14:0]") is "0" for steps phases
+	and (ram_link steps [("1",  A3), ("2",  A2), ("3",  A1), ("4",  A0)])
+	and (ram_link steps [("5",  B3), ("6",  B2), ("7",  B1), ("8",  B0)]);
+
+// Address for the last chunks
+let ADDR_A = 4;
+let ADDR_B = 8;
+
+// Adds ints in the RAM antecedant
+// They are added starting at ADDR_FREE, ADDR_FREE + 1 and so on...
+let more_ints steps ints =
+	mk_ram_antecedent RAM_name steps (ram_from_ints ADDR_FREE ints);
+
+
+// ================================================
+// § Test function
+// ================================================
+0;
+
+// Runs a sybolic trajectory evalutation (STE) for the ALU
+// Inputs:
+//  - window (bool)   - when false, run STE on FSM, when true, run on VFSM
+//                      (which draws the debug window)
+//  - steps (int)     - the number of steps (phases) to simulate
+// Parameters: (a.k.a. anything that can be given as an STE antecedent)
+//  - op_type (prims) - the operation being testes
+//  - addr_a (addr)
+//  - addr_b (addr)
+//  - addr_c (addr)
+//  - addr_d (addr)
+//  - extra (STE antecedent) - extra antecedent date
+//  - cons (STE consequence) - the consequence to check
+//  - subst (string#bool list) - list of substitution (performed on antecedent and consequences)
+let run_test window steps op_type addr_a addr_b addr_c addr_d extra cons substitution =
+	let test_inputs = substitute substitution ((mk_inputs steps op_type ADDR_REDEX addr_a addr_b addr_c addr_d)
+	and (init_ram steps) and extra) in
+	let test_cons = substitute substitution ("op_ack" is "1" in_phase (steps-1) and cons) in
+	let fsm = pexlif2fsm ALU_tester_pexlif in
+	(window)
+		=> let vis = STE_debug fsm in
+		    (ALU_tester_waveform vis fseq
+		    STE "-e" vis [] test_inputs test_cons [])
+		| STE "" fsm [] test_inputs test_cons [("op_ack",1,steps-1)];
+
+// Runs a test. Test are tuples with the following:
+//  - name (string)   - test name (displayed in verbose mode)
+//  - verbose (bool)  - When true, print the result, if not simply return it
+//  - window (bool)   - when false, run STE on FSM, when true, run on VFSM
+//  - order (string list) - order bdd variables (passed to var_order)
+//  - steps (int)     - the number of steps (phases) to simulate
+// Parameters: (a.k.a. anything that can be given as an STE antecedent)
+//  - op_type (prims) - the operation being testes
+//  - addr_a (addr)
+//  - addr_b (addr)
+//  - addr_c (addr)
+//  - addr_d (addr)
+//  - extra (STE antecedent) - extra antecedent date
+//  - cons (STE consequence) - the consequence to check
+//  - subst (string#bool list) - list of substitution (performed on antecedent and consequences)
+let eval_test (
+		name, verbose, window, order, steps,
+		op_type, addr_a, addr_b, addr_c, addr_d,
+		extra, cons, substitution) =
+	var_order order fseq
+	let ste_result = run_test window steps op_type addr_a addr_b addr_c addr_d extra cons substitution in
+	let test_result = (get_ste_result ste_result "strong") == T in
+	let test_duration = last_high ste_result "op_ack" in
+	(verbose)
+		=> printf "TEST_%-17s : %6s in %d steps\n"
+				name
+				(test_result => "OK" | "FAILED")
+				test_duration
+			fseq test_result
+		|  test_result;
+
+// Returns the partial address for n_chunk of the number ENDING at origin
+let partial_addr origin nb_chunk =
+	(nb_chunk = 0) => ADDR_END | (origin - (nb_chunk-1));
+
+// Condition on a list of chunk to be well formed
+letrec well_formed_int (prev:top:[]) = well_formed top prev
+    /\ well_formed_int ([]) = T
+    /\ well_formed_int (t:q) = well_formed_int q;
+
+// Create a variable order of alternating vars
+letrec alternate_order ([]) ([]) = []
+    /\ alternate_order (t:q) ([]) = (bool2str 8 t):(alternate_order q [])
+    /\ alternate_order ([]) (t:q) = (bool2str 8 t):(alternate_order q [])
+    /\ alternate_order (t1:q1) (t2:q2) = (bool2str 8 t1):(bool2str 8 t2):(alternate_order q1 q2) ;
+
+
+// Simple up-scalable test for variable number of chunks
+// Arguments:
+//   <name (str)> the test name
+//   <op_type (prims)> the operation type
+//   <cons : bv -> bv -> int -> int -> int -> STE consequence>
+//     the consequence tested, takes as inputs:
+//       - both arguments
+//       - the address of the both arguments (used in redirections)
+//       - the total number of steps given
+// Creates a test function with three arguments
+//   <size_1 (int)> number of chunks in first argument (between 0 and 4)
+//   <size_2 (int)> number of chunks in second argument (between 0 and 4)
+//   <steps (int)>  length of the simulation
+let test_factory name op_type cons =
+	let tester size_1 size_2 steps =
+		let arg_1 = lastn size_1 A in
+		let arg_2 = lastn size_2 B in
+		let int_1 = bv_full_int arg_1 in
+		let int_2 = bv_full_int arg_2 in
+		let addr_1 = partial_addr ADDR_A size_1 in
+		let addr_2 = partial_addr ADDR_B size_2 in
+		eval_test (
+			sprintf "%s_%d_%d_CHUNKS" name size_1 size_2, T, F,
+			alternate_order (bv2list int_1) (bv2list int_2),
+			// The third and first argument are the same (usefull for P_COND and P_DIV)
+			// doesn't constrain anything as each time one of them is used only
+			// for an indirection
+			steps, op_type, mk_addr addr_1, mk_addr addr_2, mk_addr addr_1, "0",
+			[], cons int_1 int_2 addr_1 addr_2 (steps-6),
+			param ((well_formed_int arg_1) AND (well_formed_int arg_2))
+		)
+	in tester;
+
+// Run all test in the list
+// Return true if all suceed
+letrec test_series ([]) = T
+    /\ test_series (t:q) = t nl_AND (test_series q);
+
+
+// ================================================
+// § Variable orders
+// ================================================
+0;
+
+
+let VAR_ORDER_1_CHUNK    = ["A0[5]","B0[5]","A0[4]","B0[4]","A0[3]","B0[3]","A0[2]","B0[2]","A0[1]","B0[1]", "A0[0]","B0[0]"];
+let VAR_ORDER_2_CHUNKS   = ["A1[5]","B1[5]","A1[4]","B1[4]","A1[3]","B1[3]","A1[2]","B1[2]","A1[1]","B1[1]","A1[0]","B1[0]","A0[5]","B0[5]","A0[4]","B0[4]","A0[3]","B0[3]","A0[2]","B0[2]","A0[1]","B0[1]", "A0[0]","B0[0]"];
+let VAR_ORDER_1_2_CHUNKS = ["B1[5]","A0[5]","B1[4]","A0[4]","B1[3]","A0[3]","B1[2]","A0[2]","B1[1]","A0[1]","B1[0]","A0[0]","B0[5:0]"];
+let VAR_ORDER_2_1_CHUNKS = ["A1[5]","B0[5]","A1[4]","B0[4]","A1[3]","B0[3]","A1[2]","B0[2]","A1[1]","B0[1]","A1[0]","B0[0]","A0[5:0]"];
+let VAR_ORDER_1_DIVIDER  = ["op_req","rect","let__main_0_7","let_end_flip_r_2_2","let_loop_9_2","var_initial","let_inner_loop_2_5","let_inner_loop_3_2","let_inner_loop_4_0","din[7:0]","step_ready[0]","op_type[1:0]","zero_division_error","B3[5:0]","B2[5:0]","B1[5:0]","C3[5:0]","C2[5:0]","C1[5:0]","C0[5:0]","D3[5:0]","D2[5:0]","D1[5:0]","D0[5:0]","do_update","let_end_flip_q_1_1","let_flip_n_0_6","let_loop_2_9","let_loop_7_3","let_read_d_0_0","let_read_d_1_0","let_read_d_3_1","let_read_d_4_3","step_ready[1]","op_done","let_end_clean_r_0_1","let_end_clean_r_0_0","let_flip_n_0_11","let_loop_3_0","let_loop_3_8","read_a_ack","let_loop_6_7","let_read_n_0_11","let_read_n_0_5","let_read_n_0_4","did_read","did_update","res_end","let_loop_6_5","A3[5:0]","A2[5:0]","A1[5:0]","A0[5:3]","B0[5]","b_end","stop","a_pos","a_end","b_pos","read_b_ack","carry","let_loop_3_1","var_short_d","let_loop_6_1","advance","B0[4:1]","A0[0]","B0[0]","A0[1:2]"];
+
+
+// ================================================
+// § Test consequences/checkers
+// ================================================
+0;
+
+
+// STE consequence for node name is 1-chunk int with value value in given phase
+let bool_node_cons name step value =
+	(name^"[14:10]") is "0" in_phase step and
+	(name^"[9]") is value in_phase step and
+	(name^"[8:3]") is "0" in_phase step and
+	(name^"[2:0]") is G_INT in_phase step;
+
+// STE consequence for node name indirection to node laddr in given phase
+let indir_node_cons name step laddr =
+	(name^"[14:9]") is "0" in_phase step and
+	(name^"[8:3]") is laddr in_phase step and
+	(name^"[2:0]") is G_INDIR in_phase step;
+
+// STE consequence for node of the logical unit:
+//  - if test is true, 1-chunk integer node with value value
+//  - else indirection to laddr
+let mixed_node_cons name step value test laddr =
+	(name^"[14:9]") is (IF test THEN value ELSE bv_0) in_phase step and
+	(name^"[8:3]") is (IF test THEN bv_0 ELSE laddr) in_phase step and
+	(name^"[2:0]") is (IF test THEN G_INT_bv ELSE G_INDIR_bv) in_phase step;
+
+// Simple STE boolean node consequence
+let boolean_cons value step =
+	(bool_node_cons "new_redex_value" step value) and
+	"overwrite_redex" is "1" in_phase step;
+
+// Simple STE indirection node consequence
+let indir_cons addr step =
+	(indir_node_cons "new_redex_value" step addr) and
+	"overwrite_redex" is "1" in_phase step;
+
+// STE boolean or inderection consequece:
+// - if test, boolean node consequence with given value
+// - else, indirection node consequence with given laddr
+let mixed_cons test value laddr step =
+	(mixed_node_cons "new_redex_value" step value test laddr) and
+	"overwrite_redex" is "1" in_phase step;
+
+
+// Consequence for arithmetic operations
+let arith_cons value step =
+	"overwrite_redex" is "0" in_phase step and
+	"redex_int[47:0]" is (fixed_bv2list (8*INT_SZ) T value) in_phase step and
+	"redex_int_is_clean" is "1" in_phase step and
+	"redex_int_is_int" is "1" in_phase step;
+
+
+// Consequence for the divider operations
+let divider_cons N D addr_k step =
+	let d_is_0 = D = bv_0 in
+	let q = IF d_is_0 THEN bv_0 ELSE (bv_div N D) in
+	let r = IF d_is_0 THEN bv_0 ELSE (bv_mod N D) in
+	let sign_d = IF (bv_greater D bv_0) THEN bv_1 ELSE bv_n1 in
+	let quotient = IF (bv_geq r bv_0) THEN q ELSE (bv_sub q sign_d) in
+	let remainder = IF (bv_geq r bv_0) THEN r ELSE (bv_add (bv_mul sign_d D) r) in
+	(d_is_0 == F AND ((bv_add (bv_mul quotient D) remainder) !== N)) =>
+		eprintf "Divider values fails to match !\n" |
+	"overwrite_redex" is "0" in_phase step and
+	"Q[47:0]" is (fixed_bv2list (8*INT_SZ) T quotient) in_phase step and
+	"Q_is_clean" is "1" in_phase step and
+	"Q_is_int" is "1" in_phase step and
+	"R[47:0]" is (fixed_bv2list (8*INT_SZ) T remainder) in_phase step and
+	"R_is_clean" is "1" in_phase step and
+	"R_is_int" is "1" in_phase step and
+	"redex_node[2:0]" is (IF d_is_0 THEN G_NIL_bv ELSE G_APPL_bv) in_phase step and
+	"apply_node[2:0]" is (IF d_is_0 THEN [F,F,F] ELSE G_APPL_bv) in_phase step and
+	"apply_node[8:3]" is (IF d_is_0 THEN bv_0 ELSE (list2bv (fixed_bv2list ADDR_SZ F addr_k))) in_phase step;
+
+
+// ================================================
+// § Comparator unit tests
+// ================================================
+0;
+
+
+// TESTS FOR EQ
+let eq_cons a b _ _ steps = boolean_cons (bv_eq a b) steps;
+let test_eq = test_factory "EQ" P_EQ eq_cons;
+
+clet TEST_EQ = test_series [
+	test_eq 1 1 40,
+	test_eq 1 2 40,
+	test_eq 2 1 40,
+	test_eq 2 2 60,
+	test_eq 1 3 40,
+	test_eq 2 3 60,
+	test_eq 3 1 80,
+	test_eq 3 2 80,
+	test_eq 3 3 100
+];
+
+// TESTS FOR NEQ
+let neq_cons a b _ _ steps = boolean_cons (bv_neq a b) steps;
+let test_neq = test_factory "NEQ" P_NEQ neq_cons;
+
+clet TEST_NEQ = test_series [
+	test_neq 1 1 40,
+	test_neq 1 2 40,
+	test_neq 2 1 40,
+	test_neq 2 2 60,
+	test_neq 1 3 40,
+	test_neq 2 3 60,
+	test_neq 3 1 80,
+	test_neq 3 2 80,
+	test_neq 3 3 100
+];
+
+// TESTS FOR GT
+let gt_cons a b _ _ steps = boolean_cons (bv_greater a b) steps;
+let test_gt = test_factory "GT" P_GT gt_cons;
+
+clet TEST_GT = test_series [
+	test_gt 1 1 60,
+	test_gt 1 2 60,
+	test_gt 2 1 60,
+	test_gt 2 2 60,
+	test_gt 1 3 80,
+	test_gt 2 3 80,
+	test_gt 3 1 80,
+	test_gt 3 2 80,
+	test_gt 3 3 100
+];
+
+// TESTS FOR GEQ
+let geq_cons a b _ _ steps = boolean_cons (bv_geq a b) steps;
+let test_geq = test_factory "GEQ" P_GEQ geq_cons;
+
+clet TEST_GEQ = test_series [
+	test_geq 1 1 60,
+	test_geq 1 2 60,
+	test_geq 2 1 60,
+	test_geq 2 2 60,
+	test_geq 1 3 80,
+	test_geq 2 3 80,
+	test_geq 3 1 80,
+	test_geq 3 2 80,
+	test_geq 3 3 100
+];
+
+
+clet TEST_COMPARATOR = TEST_EQ nl_AND TEST_NEQ nl_AND TEST_GT nl_AND TEST_GEQ;
+
+
+// ================================================
+// § Logical unit tests
+// ================================================
+0;
+
+
+// TESTS FOR NOT
+let not_cons a _ _ _ steps = boolean_cons (bv_eq a bv_0) steps;
+let test_not = test_factory "NOT" P_NOT not_cons;
+
+clet TEST_NOT = test_series [
+	test_not 1 0 40,
+	test_not 2 0 40,
+	test_not 3 0 40
+];
+
+
+
+// TESTS FOR AND
+let and_cons a _ _ addr_b steps = mixed_cons (bv_eq a bv_0) bv_0 (int2bv addr_b) steps;
+let test_and = test_factory "AND" P_AND and_cons;
+
+clet TEST_AND = test_series [
+	test_and 1 1 40,
+	test_and 2 1 40,
+	test_and 1 2 40,
+	test_and 2 2 40,
+	test_and 1 3 80,
+	test_and 2 3 80,
+	test_and 3 1 80,
+	test_and 3 2 80,
+	test_and 3 3 100
+];
+
+
+// TESTS FOR OR
+let or_cons a _ _ addr_b steps = mixed_cons (bv_neq a bv_0) bv_1 (int2bv addr_b) steps;
+let test_or = test_factory "OR" P_OR or_cons;
+
+clet TEST_OR = test_series [
+	test_or 1 1 40,
+	test_or 2 1 40,
+	test_or 1 2 40,
+	test_or 2 2 40,
+	test_or 1 3 80,
+	test_or 2 3 80,
+	test_or 3 1 80,
+	test_or 3 2 80,
+	test_or 3 3 100
+];
+
+
+// TESTS FOR COND
+let cond_cons a _ addr_a addr_b steps =
+	indir_cons (IF (bv_neq a bv_0) THEN (int2bv addr_b) ELSE (int2bv addr_a)) steps;
+let test_cond = test_factory "COND" P_COND cond_cons;
+
+clet TEST_COND = test_series [
+	test_cond 1 1 40,
+	test_cond 2 1 40,
+	test_cond 3 2 40
+];
+
+
+clet TEST_LOGICAL = TEST_NOT nl_AND TEST_AND nl_AND TEST_OR nl_AND TEST_COND;
+
+
+// ================================================
+// § Arithmetic unit tests
+// ================================================
+0;
+
+
+// TESTS FOR ADD
+let add_cons a b _ _ steps = arith_cons (bv_add a b) steps;
+let test_add = test_factory "ADD" P_PLUS add_cons;
+
+clet TEST_ADD = test_series [
+	test_add 1 1 150,
+	test_add 1 2 160,
+	test_add 2 1 160,
+	test_add 2 2 200,
+	test_add 1 3 300,
+	test_add 3 1 300
+];
+
+clet TEST_ADD_LONG = test_series [
+	test_add 3 2 400,
+	test_add 2 3 400,
+	test_add 3 3 400
+];
+
+
+// TESTS FOR SUB
+let sub_cons a b _ _ steps = arith_cons (bv_sub a b) steps;
+let test_sub = test_factory "SUB" P_MINUS sub_cons;
+
+clet TEST_SUB = test_series [
+	test_sub 1 1 150,
+	test_sub 1 2 160,
+	test_sub 2 1 160,
+	test_sub 2 2 200,
+	test_sub 1 3 300,
+	test_sub 3 1 300
+];
+
+clet TEST_SUB_LONG = test_series [
+	test_sub 3 2 400,
+	test_sub 2 3 400,
+	test_sub 3 3 400
+];
+
+// clet TEST_SUB_EX = // text with explicit values
+// 	let steps = 170 in
+// 	let a = -12 in
+// 	let b = 67 in
+// 	printf "result = %s\n" (sprint_number (a-b)) fseq
+// 	eval_test (
+// 		"SUB_EX", T, T, [], steps, P_MINUS,
+// 		mk_addr (ADDR_FREE), mk_addr (ADDR_FREE + 1), "0", "0",
+// 		more_ints steps [a, b],
+// 		arith_cons (int2bv (a-b)) (steps-4), []
+// );
+
+
+// TESTS FOR MUL
+let mul_cons a b _ _ steps = arith_cons (bv_mul a b) steps;
+let test_mul = test_factory "MUL" P_TIMES mul_cons;
+
+clet TEST_MUL = test_series [
+	test_mul 1 1 150,
+	test_mul 1 2 500,
+	test_mul 2 1 500
+];
+
+clet TEST_MUL_LONG = test_series [
+	test_mul 2 2 700,
+	test_mul 1 3 700,
+	test_mul 3 1 700
+];
+
+let TEST_MUL_EX a b = // text with explicit values
+	let steps = 570 in
+	printf "a = %s\nb = %s\n" (sprint_number a) (sprint_number b) fseq
+	eval_test (
+		"MUL_EX", T, F, [], steps, P_TIMES,
+		mk_addr (ADDR_FREE), mk_addr (ADDR_FREE + 1), "0", "0",
+		more_ints steps [a, b],
+		arith_cons (int2bv (a*b)) (steps-4), []
+);
+
+
+// TESTS FOR DIV
+// divider is flipped : first input is denominator
+let div_cons a b addr_a _ steps = divider_cons b a (int2bv addr_a) steps;
+let test_div = test_factory "DIV" P_DIVMOD div_cons;
+
+clet TEST_DIV = test_series [
+	test_div 1 1 200,
+	test_div 1 2 500,
+	test_div 2 1 1500
+];
+clet TEST_DIV_LONG = test_series [
+	test_div 2 2 2500 // Warning; patience required here. It passed though
+];
+
+let TEST_DIV_EX a b = // text with explicit values
+	let steps = 2500 in
+	printf "a = %s\nb = %s\n" (sprint_number a) (sprint_number b) fseq
+	eval_test (
+		"DIV_EX", T, F, [], steps, P_DIVMOD,
+		"4", mk_addr (ADDR_FREE), mk_addr (ADDR_FREE + 1), "0",
+		more_ints steps [a, b],
+		divider_cons (int2bv a) (int2bv b) ('4) (steps-6), []
+);
+
+
+clet TEST_ARITHMETIC = TEST_ADD nl_AND TEST_SUB nl_AND TEST_MUL nl_AND TEST_DIV;
+clet TEST_ARITHMETIC_LONG = TEST_ADD_LONG
+	nl_AND TEST_SUB_LONG nl_AND TEST_MUL_LONG
+	nl_AND TEST_DIV_LONG;
+
+
+// ================================================
+// § Running the tests
+// ================================================
+0;
+
+
+// Warning: memory and time hungry (~4 GB consumed)
+clet TEST_ALU = TEST_COMPARATOR nl_AND TEST_LOGICAL nl_AND TEST_ARITHMETIC;
+// WARNING: TAKES > 16 GB of RAM and if VERY LONG...
+clet TEST_ALU_LONG = TEST_ALU nl_AND TEST_ARITHMETIC_LONG;
+
+// TEST_ALU;
+
+// TODO:
+// P_SQRT ?? (not yet implemented)
+// P_PROC_INIT (WTF is this ??)
+//
+// Done:
+// COMPARATOR : P_EQ, P_NEQ, P_GT, P_GEQ,
+// LOGICAL    : P_AND, P_OR, P_NOT, P_COND,
+// ARITHMETIC : P_PLUS, P_MINUS, P_TIMES, P_DIVMOD,

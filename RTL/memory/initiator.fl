@@ -1,0 +1,148 @@
+cload (DIR^"../types.fl");
+cload (DIR^"CR.fl");
+
+ENUM "i_states" [
+		"I_START", "I_C_READ",
+		"I_ROM_RD_S", "I_ROM_RD",
+		"I_RAM_WR_S", "I_RAM_W",
+		"I_DONE"];
+
+let ram_delay =
+    bit_input	clk.
+    bit_input	rst_ram_cnt.
+    ram_d_input CR_ram_delay.
+    bit_output	ram_rdy.
+    //
+    ram_d_internal  ram_cnt extra_ram_delay.
+    //
+    CELL "draw_hier ram_delay" [
+	compute_extra_delay CR_ram_delay extra_ram_delay,
+	STATE clk ram_cnt [
+	    rst_ram_cnt --- extra_ram_delay,
+	    default	--- (ram_cnt '-' '1) 
+	],
+	ram_rdy <- ram_cnt '=' '0
+];
+
+let rom_delay =
+    bit_input	clk.
+    bit_input	rst_rom_cnt.
+    rom_d_input CR_rom_delay.
+    bit_output	rom_rdy.
+    //
+    rom_d_internal  rom_cnt extra_rom_delay.
+    //
+    CELL "draw_hier rom_delay" [
+	compute_extra_delay CR_rom_delay extra_rom_delay,
+	STATE clk rom_cnt [
+	    rst_rom_cnt --- extra_rom_delay,
+	    default	--- (rom_cnt '-' '1) 
+	],
+	rom_rdy <- rom_cnt '=' '0
+];
+
+
+let Initiator =
+    bit_input	clk reset.
+    cr_inout	cr.
+    //
+    // ROM interface
+    addr_output	    rom_addr.
+    node_input	    rom_data.
+    // RAM interface
+    eaddr_output    ram_addr.
+    bit_output	    ram_rw.
+    node_output	    ram_wdata.
+    // Allocator interface
+    bit_output	    alloc_req.
+    //
+    bit_output	    done.
+    addr_output     entry_point.
+    //
+    // Internal signals
+    //
+    cr_internal	    c1 c2.
+    bit_internal    rst_rom_cnt.
+    bit_internal    rom_rdy.
+    bit_internal    ram_rdy.
+    bit_internal    copy_done.
+    eaddr_internal   end_copy_addr.
+    bit_internal    done_rom_rd1.
+    bit_internal    done_rom_rd2.
+    bit_internal    incr_rom_addr.
+    bit_internal    rst_ram_cnt.
+    internal	    state.
+    ram_d_internal  CR_ram_delay.
+    rom_d_internal  CR_rom_delay.
+    //
+    CELL "draw_hier Initiator" [
+	CR "i_ram_latency" c1 CR_ram_delay,
+	CR "i_rom_latency" c2 CR_rom_delay,
+	CR_connect2 c1 c2 cr,
+	//
+	rst_ram_cnt <- is_I_RAM_WR_S state,
+	ram_delay clk rst_ram_cnt CR_ram_delay ram_rdy,
+	rst_rom_cnt <- is_I_START state '|' is_I_ROM_RD_S state,
+	rom_delay clk rst_rom_cnt CR_rom_delay rom_rdy,
+	// Initial copying of flash content to main memory
+	copy_done <- (ram_addr '>' end_copy_addr),
+	//
+	(Moore_FSM "Initialization" clk state
+	    (reset, I_START)
+	    [
+		I_START		   --- default   --- I_C_READ,
+		I_C_READ	   --- rom_rdy   --- I_ROM_RD_S,
+		I_ROM_RD_S   --- copy_done --- I_DONE,
+		I_ROM_RD_S   --- default   --- I_ROM_RD,
+		I_ROM_RD	   --- rom_rdy   --- I_RAM_WR_S,
+		I_RAM_WR_S  --- default   --- I_RAM_W,
+		I_RAM_W	   --- ram_rdy   --- I_ROM_RD_S
+	    ]
+	),
+	ram_rw <- '~' (is_I_RAM_W state),
+	STATE clk ram_addr [
+	    reset   --- '0,
+	    is_I_RAM_W state '&' ram_rdy --- (ram_addr '+' '1)
+	],
+	done_rom_rd1 <- is_I_C_READ state '&' rom_rdy,
+	done_rom_rd2 <- is_I_ROM_RD state '&' rom_rdy,
+	incr_rom_addr <- done_rom_rd1 '|' done_rom_rd2,
+	STATE clk rom_addr [
+	    reset	  --- '0,
+	    incr_rom_addr --- (rom_addr '+' '1)
+	],
+	re_ff_en clk done_rom_rd2 rom_data ram_wdata,
+	re_ff_en clk done_rom_rd1 (rom_data-->end_addr) end_copy_addr,
+	re_ff_en clk done_rom_rd1 (rom_data-->entry_addr) entry_point,
+	alloc_req <- rst_ram_cnt,
+	done <- is_I_DONE state
+];
+
+
+//let p = Initiator 'clk 'reset 'cr
+//		  'rom_addr 'rom_data
+//		  'ram_addr 'ram_rw 'ram_wdata 'alloc_req
+//		  'done 'entry_point
+//;
+//
+//let ckt = pexlif2fsm p;
+//ckt;
+//
+//let v = STE_debug ckt;
+//v;
+//
+//let N = 100;
+//
+//let ant =
+//    "clk" is_clock N
+//  and
+//    "reset" is 1 for 1 cycle followed_by 0 for (N-1) cycles
+//  and
+//     (make_CR_ant ckt [("i_ram_latency", RAM_LATENCY),
+//			("i_rom_latency", ROM_LATENCY)] (N cycles))
+//  and
+//    "rom_data[12:0]" is 0x23 for 20 cycles
+//;
+//
+//STE "-e" v [] ant [] [];
+//

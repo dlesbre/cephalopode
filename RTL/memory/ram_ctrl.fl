@@ -1,0 +1,136 @@
+cload (DIR^"../types.fl");
+cload (DIR^"CR.fl");
+cload (DIR^"arbiter.fl");
+
+
+ENUM "ram_ctrl_fsm" [
+	    "INIT",
+	    "A_WAIT", "A_DONE",
+	    "G_WAIT", "G_DONE"
+];
+
+let ram_controller =
+    // Standard interfaces
+    bit_input	    clk.
+    bit_input	    reset.
+    cr_inout	    cr.
+    // MC interface
+    bit_input	    a_ram_req.
+    bit_input	    a_rw.
+    addr_input	    a_addr.
+    node_input	    a_wdata.
+    bit_output	    a_ram_ack.
+    node_output	    a_rdata.
+    // GC interface
+    bit_input	    g_ram_req.
+    addr_input	    g_addr.
+    bit_output	    g_ram_ack.
+    node_output	    g_rdata.
+    // RAM interface
+    addr_output	    ram_addr.
+    bit_output	    ram_rw.
+    node_input	    ram_rdata.
+    node_output	    ram_wdata.
+    // Type of memory operatin
+    bit_output	    is_g_cycle.
+    //
+    // Internal wires
+    //
+    bit_internal	    a_grant g_grant.
+    bit_internal	    rst_ram_cnt ram_rdy.
+    bit_internal	    is_a_cycle.
+    ram_d_internal	    CR_ram_delay ram_cnt extra_delay.
+    ram_ctrl_fsm_internal   rstate.
+    //
+    CELL "draw_hier RAM_ctrl" [
+	// Control registers
+	CR "ram_latency" cr CR_ram_delay,
+	// Arbiter to decide who gets the next RAM cycle
+	arbiter clk reset a_ram_req g_ram_req a_grant g_grant,
+	// Main FSM
+	(Moore_FSM "ram_ctrl" clk rstate
+	    (reset --- INIT)
+	    [
+		INIT --- a_grant --- A_WAIT,
+		INIT --- g_grant --- G_WAIT,
+		A_WAIT  --- ram_rdy --- A_DONE,
+		A_DONE --- '~' a_ram_req --- INIT,
+		G_WAIT  --- ram_rdy --- G_DONE,
+		G_DONE --- '~' g_ram_req --- INIT
+	    ]
+	),
+	is_a_cycle <- is_A_WAIT rstate '|' is_A_DONE rstate,
+	is_g_cycle <- is_G_WAIT rstate '|' is_G_DONE rstate,
+	//
+	a_ram_ack <- is_A_DONE rstate,
+	g_ram_ack <- is_G_DONE rstate,
+	// RAM interface
+	rst_ram_cnt <- is_INIT rstate,
+	compute_extra_delay CR_ram_delay extra_delay,
+	STATE clk ram_cnt [
+	    rst_ram_cnt --- extra_delay,
+	    default	--- (ram_cnt '-' '1) 
+	],
+	ram_rdy <- ram_cnt '=' '0,
+	ram_addr <- (IF is_g_cycle THEN g_addr ELSE a_addr),
+	ram_rw <- a_rw '|' is_g_cycle,
+	ram_wdata <- a_wdata,
+	re_ff_en clk (ram_rdy '&' is_a_cycle) ram_rdata a_rdata,
+	re_ff_en clk (ram_rdy '&' is_g_cycle) ram_rdata g_rdata
+];
+
+//
+//let p = ram_controller 'clk 'reset 'cr
+//		       'a_ram_req 'a_rw 'a_addr 'a_wdata 'a_ram_ack 'a_rdata
+//		       'g_ram_req 'g_addr 'g_ram_ack 'g_rdata
+//		       'ram_addr 'ram_rw 'ram_rdata 'ram_wdata;
+//
+//let ckt = pexlif2fsm p;
+//
+//let vis = STE_debug ckt;
+//vis;
+//
+//let N = 100;
+//
+//let ant =
+//    "clk" is_clock N
+//  and
+//    "reset" is 1 for 1 cycle otherwise 0 until N cycles
+//  and
+//    make_CR_ant ckt [("ram_latency", RAM_LATENCY)] (N cycles)
+////
+//  and
+//    "a_ram_req" is 1 in_cycles (10--12) followed_by
+//		   1 in_cycles (20--23) followed_by
+//		   1 in_cycles (30--33) 
+//		   otherwise 0 until N cycles
+//  and
+//    "a_rw" is 0 in_cycles (20--23) followed_by
+//	      0 in_cycles (30--33) 
+//	      otherwise 1 until N cycles
+//  and
+//    "a_addr[4:0]" is 0x1 in_cycles (10--13) followed_by
+//		     0x2 in_cycles (20--23) followed_by
+//		     0x3 in_cycles (30--33) 
+//  and
+//    "a_wdata[12:0]" is 0xab in_cycles (20--23) followed_by
+//		       0x3f in_cycles (30--33) 
+////
+//  and
+//    "g_ram_req" is 1 in_cycles (40--43) followed_by
+//		   1 in_cycles (50--53) followed_by
+//		   1 in_cycles (60--63) 
+//		otherwise 0 until N cycles
+//  and
+//    "g_addr[4:0]" is 0x2 in_cycles (40--43) followed_by
+//		     0x2 in_cycles (50--53) followed_by
+//		     0x1 in_cycles (60--63) 
+//  and
+//    "ram_rdata[12:0]" is 0x2b7 in_phase 23 followed_by
+//			 0x123 in_cycle 42 followed_by
+//			 0x456 in_cycle 52 followed_by
+//			 0x789 in_cycle 62
+//;
+//STE "-e" vis [] ant [] [];
+//
+//

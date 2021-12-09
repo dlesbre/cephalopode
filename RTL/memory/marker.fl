@@ -1,0 +1,205 @@
+cload (DIR^"../types.fl");
+
+ENUM "four_phase" ["IDLE", "WAIT_FOR_ACK", "WAIT_FOR_NACK", "DONE"];
+
+let rd_protocol_ifc =
+    bit_input           clk.
+    bit_input           start.
+    bit_input           ack.
+    input               din.
+    bit_output          req.
+    bit_output          done.
+    output              dout.
+    four_phase_internal state.
+    bit_internal        reset.
+    CELL "draw_hier rd_ifc_fsm" [
+        reset <- '~' start,
+        req <- is_IDLE state '&' start '|' is_WAIT_FOR_ACK state,
+        Moore_FSM "ifc" clk state (reset --- IDLE)
+        [
+                IDLE          --- start   --- WAIT_FOR_ACK,
+                WAIT_FOR_ACK  --- ack     --- WAIT_FOR_NACK,
+                WAIT_FOR_NACK --- '~' ack --- DONE
+        ],
+        re_ff_en clk (is_WAIT_FOR_ACK state '&' ack) din dout,
+        done <- is_WAIT_FOR_NACK state '&' '~' ack
+];
+
+let wr_protocol_ifc =
+    bit_input           clk.
+    bit_input           start.
+    bit_input           ack.
+    input               din.
+    bit_output          req.
+    bit_output          done.
+    output              dout.
+    four_phase_internal state.
+    bit_internal        reset.
+    CELL "draw_hier wr_ifc_fsm" [
+        reset <- '~' start,
+        req <- is_WAIT_FOR_ACK state,
+        Moore_FSM "ifc" clk state (reset --- IDLE)
+        [
+                IDLE          --- start   --- WAIT_FOR_ACK,
+                WAIT_FOR_ACK  --- ack     --- WAIT_FOR_NACK,
+                WAIT_FOR_NACK --- '~' ack --- DONE
+        ],
+        re_ff_en clk (is_IDLE state '&' start) din dout,
+        done <- is_WAIT_FOR_NACK state '&' '~' ack
+];
+
+
+ENUM "mark_state" ["MRK_IDLE",
+		   "MRK_POP", "MRK_READ", "MRK_DECODE",
+		   "MRK_PUSH1", "MRK_PUSH2"
+];
+
+MEMORY "GC_STACK" [(32, "addr")] "addr";
+
+STRUCT "node_and_mark" [("node", "node"),("mark", "bit")];
+
+let marker =
+    //
+    // Global interface
+    //
+    bit_input	    clk reset.
+    addr_input	    root.
+    bit_input	    do_mark.
+    bit_output	    mark_done.
+    //
+    // Interface to memory controller
+    bit_output	    mark_req.
+    addr_output	    mark_addr.
+    bit_input	    mark_ack.
+    bit_input	    already_marked.
+    node_input	    nd.
+    //
+    // Internal signals
+    //
+    GC_STACK_internal	stack new_stack.
+    addr_internal	data_to_push push_addr to_read_addr.
+    eaddr_internal	wr_p rd_p.
+    mark_state_internal	mstate.
+    bit_internal	start push pop do_push1 do_push2 is_leaf empty rd_done.
+    node_internal	nd_int.
+    bit_internal	already_marked_internal arb_int.
+    node_and_mark_internal  nm_ext nm_int.
+    //
+    CELL "draw_hier marker" [
+	start <- is_MRK_IDLE mstate,
+	push  <- is_MRK_PUSH1 mstate '|' is_MRK_PUSH2 mstate,
+	pop   <- is_MRK_POP mstate,
+	CASE data_to_push [
+            start --- root,
+            is_MRK_PUSH1 mstate --- nd_int-->laddr,
+            is_MRK_PUSH2 mstate --- nd_int-->raddr
+        ] 'X,
+	push_addr <- (IF start THEN '0   ELSE (eaddr2addr wr_p)),
+	Write_GC_STACK stack push_addr data_to_push new_stack,
+	Read_GC_STACK stack (eaddr2addr rd_p) to_read_addr,
+	re_ff_en clk pop to_read_addr mark_addr,
+	re_ff_en clk (start '|' push) new_stack stack,
+	STATE clk rd_p [
+	    reset --- '0,
+	    pop   --- (rd_p '+' '1)
+	],
+	STATE clk wr_p [
+	    reset --- '1,
+	    push   --- (wr_p '+' '1)
+	],
+	do_push2 <- (is_G_APPL (nd_int-->type)) '|' (is_G_CONS (nd_int-->type)),
+	arb_int <- (is_G_INT(nd_int-->type) '&' (nd_int-->laddr '!=' addr_end)),
+	do_push1 <- (is_G_INDIR (nd_int-->type) '|' arb_int),
+	is_leaf  <- '~' (do_push1 '|' do_push2) '|' already_marked_internal,
+	empty <- rd_p '=' wr_p,
+	//
+	(Moore_FSM "Mark_FSM" clk mstate
+	    (reset, MRK_IDLE)
+	    [
+		MRK_IDLE    --- do_mark	    --- MRK_POP,
+		MRK_POP	    --- empty	    --- MRK_IDLE,
+		MRK_POP	    --- ('~' empty) --- MRK_READ,
+		MRK_READ    --- rd_done	    --- MRK_DECODE,
+		MRK_DECODE  --- is_leaf	    --- MRK_POP,
+		MRK_DECODE  --- do_push2    --- MRK_PUSH1,
+		MRK_DECODE  --- do_push1    --- MRK_PUSH2,
+		MRK_PUSH1   --- default	    --- MRK_PUSH2,
+		MRK_PUSH2   --- default	    --- MRK_POP
+	    ]
+	),
+	(nm_ext-->node) <- nd,
+	(nm_ext-->mark) <- already_marked,
+	rd_protocol_ifc clk (is_MRK_READ mstate) mark_ack nm_ext
+			mark_req rd_done nm_int,
+	nd_int <- nm_int-->node,
+	already_marked_internal <- nm_int-->mark,
+	mark_done <- is_MRK_IDLE mstate
+];
+
+//let p = marker 'clk 'reset 'root 'do_mark 'mark_done 'mark_req 'mark_addr
+//	       'mark_ack 'already_marked 'nd;
+//let ckt = pexlif2fsm p;
+//let v = STE_debug ckt;
+////v;
+//
+//let node2str {n::node} = 
+//    sprintf "0x%x" (bv2int (list2bv (F:(wexpr2bool [] (hw_destr n)))))
+//;
+//
+//let mk_appl l r = 
+//    node2str ({'0::node} <-- type ? G_APPL
+//		         <-- laddr ? l
+//		         <-- raddr ? r)
+//;
+//let mk_comb combinator = node2str ({'0::node}<--type?G_COMB<-- comb?combinator);
+//let mk_prim prim_fn = node2str ({'0::node}<--type?G_PRIM<-- prim?prim_fn);
+//let mk_indir n = node2str ({'0::node}<--type?G_INDIR<-- laddr?n);
+//let mk_int i = node2str ({'0::node}<--type?G_INT<-- int?i);
+//let mk_cons h t = node2str ({'0::node} <-- type ? G_APPL
+//				       <-- laddr ? h
+//				       <-- raddr ? t)
+//;
+//let mk_nil = node2str ({'0::node}<--type?G_NIL);
+//
+//let q = (
+//    let vis = v in
+//    let tab_1 =
+//	draw_fanin vis (0) 20 ["mark_done","mark_req","mark_addr[4:0]"]
+//    then
+//    (add_waveform vis ["clk"]) fseq
+//    (add_waveform vis ["reset"]) fseq
+//    (add_waveform vis ["root[4:0]"]) fseq
+//    (add_waveform vis ["do_mark"]) fseq
+//    (add_waveform vis ["mark_ack"]) fseq
+//    (add_waveform vis ["already_marked"]) fseq
+//    (add_waveform vis ["nd[12:0]"]) fseq
+//    (add_waveform vis ["mark_done"]) fseq
+//    (add_waveform vis ["mark_req"]) fseq
+//    (add_waveform vis ["mark_addr[4:0]"])
+//);
+//
+//let ant =  q fseq
+//    "clk" is_clock 100
+//  and
+//    "reset" is "1" for 1 cycle otherwise "0" until 100 cycles
+//  and
+//    "do_mark" is "1" in_cycle 3 otherwise "0" until 100 cycles
+//  and
+//    "root[4:0]" is "0xc" for 100 cycles
+//  and
+//    "mark_ack" is "1" in_cycle 6 followed_by
+//		  "1" in_cycle 13 followed_by
+//		  "1" in_cycle 18
+//	otherwise "0" until 100 cycles
+//  and
+//    {'nd::node} is (mk_cons '1 '2) in_cycle 6 followed_by
+//		   (mk_nil) in_cycle 13 followed_by
+//		   (mk_nil) in_cycle 18
+//  and
+//    "already_marked" is "1" in_cycle 6 followed_by
+//			"0" in_cycle 13 followed_by
+//			"0" in_cycle 18
+//	otherwise "0" until 100 cycles
+//;
+//STE "-e" v [] ant [] [];
+//

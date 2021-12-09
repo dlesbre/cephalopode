@@ -1,0 +1,70 @@
+load "ste.fl";
+
+TYPE "node" 37;	// Example
+
+let MAX_ALLOC = 7;
+
+
+TYPE "alloc_sel" (bits_needed (MAX_ALLOC-1));
+
+
+let mem_array =
+    bit_input		clk.
+    bit_input		write.
+    alloc_sel_input	w_addr.
+    node_input		din.    
+    alloc_sel_input	r_addr.
+    node_output		dout.    
+    //
+    node_list_internal MAX_ALLOC array.
+    bit_list_internal MAX_ALLOC wr_sel.
+    bit_list_internal MAX_ALLOC rd_sel.
+    CELL "draw_hier mem_array" (
+	(map2 (\e.\do.  re_ff_en clk e din do) wr_sel array)
+	@ 
+	[
+	    EN_DECODER_list write w_addr wr_sel,
+	    SELECT_list array r_addr dout
+	]
+);
+
+let p =  mem_array 'clk 'write 'w_addr 'din 'r_addr 'dout;
+
+let ckt = pexlif2fsm p;
+
+let vis = STE_debug ckt;
+
+let N = 20;
+
+let ant =
+    "clk" is_clock N
+  and
+    "write" is 1 in_cycle 2 followed_by
+	       1 in_cycle 5 followed_by
+	       1 in_cycle 13
+	       otherwise 0 until N cycles
+  and
+    "w_addr[2:0]" is 0x1 in_cycle 2 followed_by
+		     0x4 in_cycle 5 followed_by
+		     0x1 in_cycle 13
+  and
+    "din[36:0]" is 0xabba in_cycle 2 followed_by
+		   0x123 in_cycle 5 followed_by
+		   0xaaaa in_cycle 13
+  and
+    "r_addr[2:0]" is 0x1 in_cycle 3 followed_by
+		     0x4 in_cycle 6 followed_by
+		     0x1 in_cycle 13 followed_by
+		     0x1 in_cycle 14 
+;
+
+STE "-e" vis [] ant [] [];
+
+let tab_1 = draw_fanin vis (0) 20 ["dout[36:0]"];
+tab_1;
+add_waveform vis ["clk"];
+add_waveform vis ["write"];
+add_waveform vis ["w_addr[2:0]"];
+add_waveform vis ["din[36:0]"];
+add_waveform vis ["r_addr[2:0]"];
+add_waveform vis ["dout[36:0]"];

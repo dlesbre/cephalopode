@@ -1,0 +1,215 @@
+// CLEANING UNIT
+// Remove unnecessary chunks at the end of an Int.
+// 
+// Interface with caller
+//  bit_input   do_op.
+//  addr_input  Int_to_clean.
+//  bit_output  did_op.
+
+cload (DIR^"../ALU-utils.fl");
+load (DIR^"clean_fsm.fl");
+
+// Assume "do_read '&' do_write '=' '0"
+let clean_io =
+    bit_input   clk reset.
+    // READ
+    bit_input   do_read.
+    addr_input  addr_to_read.
+    bit_output  did_read.
+    node_output data_read.
+    // WRITE
+    bit_input   do_write.
+    addr_input  addr_to_write.
+    node_input  data_to_write.
+    bit_output  did_write.
+    // SIGNALS
+    signal_input    sig_in.
+    signal_output   sig_out.
+    // Internal wires
+    rw_data_internal    read_in read_out write_in write_out.
+    addr_internal       addr_out.
+    CELL "draw_hier clean_IO" [
+        // Managers
+        read_protocol "" clk read_in read_out,
+        write_protocol "" clk write_in write_out,
+        // Data in
+        read_in <- '0<--start ? do_read
+                     <--ack   ? (sig_in-->read)
+                     <--data  ? (sig_in-->node),
+        write_in <- '0<--start ? do_write
+                      <--ack   ? (sig_in-->write)
+                      <--data  ? data_to_write,
+        // Signal out
+        CASE addr_out [
+            do_write    --- addr_to_write,
+            do_read     --- addr_to_read
+        ] '0,
+        sig_out <- '0<--read  ? (read_out-->req)
+                     <--write ? (write_out-->req)
+                     <--node  ? (write_out-->data)
+                     <--addr  ? addr_out,
+        // Status update
+        did_read <- (read_out-->done),
+        data_read <- (read_out-->data),
+        did_write <- (write_out-->done)
+    ]
+;
+
+let p_io   = clean_io 'clk 'reset 'do_read 'addr_to_read 'did_read 'data_read 'do_write 'addr_to_write 'data_to_write 'did_write 'sig_in 'sig_out;
+let ckt_io = pexlif2fsm p_io;
+let v_io   = STE_debug ckt_io;
+
+let falling_edge =
+    bit_input   clk.
+    bit_input   foo.
+    bit_output  foo_fe.
+    // Internal
+    bit_internal    was_foo.
+    CELL "draw_hier falling_edge" [
+        re_ff clk foo was_foo,
+        foo_fe <- '~' foo '&' was_foo
+    ]
+;
+
+let clean_brain =
+    bit_input   clk reset.
+    bit_input   do_update.
+    bit_output  did_update.
+    addr_input  candidate_addr.
+    Int_input   candidate.
+    addr_output lri_addr.
+    Int_output  lri. // Last relevant int
+    bit_output  do_update_fe is_rec.
+    // Internal wires
+    bit_internal    lri_sign.
+    bit_internal    need_update.
+    Int_internal    useless.
+    CELL "draw_hier clean_brain" [
+        falling_edge clk do_update do_update_fe,
+        bit_FSM "is_rec" clk reset do_update_fe reset is_rec,
+        useless <- (IF lri_sign THEN Int_neg_one ELSE Int_zero),
+        need_update <- '~' is_rec '|' '~' (candidate '=' useless),
+        re_ff_en clk (do_update '&' need_update) candidate_addr lri_addr,
+        re_ff_en clk (do_update '&' need_update) candidate lri,
+        lri_sign <- lri-->msb,
+        re_ff clk do_update did_update
+    ]
+;
+
+let p_brain   = clean_brain 'clk 'reset 'do_update 'did_update 'candidate_addr 'candidate 'lri_addr 'lri 'do_update_fe 'is_rec;
+let ckt_brain = pexlif2fsm p_brain;
+let v_brain   = STE_debug ckt_brain;
+
+let clean_addr =
+    bit_input   clk reset.
+    bit_input   is_rec do_update do_update_fe.
+    addr_input  target.
+    node_input  candidate.
+    addr_input  lri_addr.
+    addr_output candidate_addr addr_to_read addr_to_write last_addr.
+    // Internal wires
+    addr_internal   cur_candidate_addr next_candidate_addr.
+    //
+    CELL "draw_hier clean_address_book" [
+        re_ff_en clk do_update (candidate-->laddr) next_candidate_addr,
+        re_ff_en clk do_update_fe next_candidate_addr cur_candidate_addr,
+        re_ff_en clk (candidate-->laddr '=' '0) candidate_addr last_addr,
+        candidate_addr <- (IF is_rec THEN cur_candidate_addr ELSE target),
+        addr_to_read <- (IF is_rec THEN next_candidate_addr ELSE target),
+        addr_to_write <- lri_addr
+    ]
+;
+
+let clean =
+    bit_input   clk reset.
+    // Caller
+    bit_input   do_op.
+    addr_input  in_target.
+    bit_output  did_op.
+    // IO
+    signal_input    sig_in.
+    signal_output   sig_out.
+    // Internal wires
+    bit_internal    do_read did_read do_write did_write.
+    bit_internal    do_update do_update_fe did_update.
+    bit_internal    rect res_end flush is_rec.
+    addr_internal   lri_addr candidate_addr last_addr. // LRI: Last Relevant Int
+    Int_internal    lri.
+    addr_internal   addr_to_read addr_to_write.
+    node_internal   data_read data_to_write.
+    addr_internal   target stored_target.
+    //
+    CELL "draw_hier cleaning_unit" [
+        re_ff_en clk do_op in_target stored_target,
+        target <- (IF do_op THEN in_target ELSE stored_target),
+        clean_manager clk
+            did_read did_update did_write do_op ('~' (lri_addr '=' last_addr))
+            (data_read-->laddr '=' '0) reset
+            did_op do_read do_update do_write flush,
+        clean_io clk reset
+            do_read addr_to_read did_read data_read
+            do_write addr_to_write data_to_write did_write
+            sig_in sig_out,
+        clean_brain clk (reset '|' flush)
+            do_update did_update
+            candidate_addr (data_read-->int) lri_addr lri
+            do_update_fe is_rec,
+        clean_addr clk reset
+            is_rec do_update do_update_fe
+            target data_read lri_addr
+            candidate_addr addr_to_read addr_to_write last_addr,
+        data_to_write <- node_Int_zero<--int ? lri
+    ]
+;
+
+let p_clean   = clean 'clk 'reset 'do_op 'target 'did_op 'sig_in 'sig_out;
+let ckt_clean = pexlif2fsm p_clean;
+let v_clean   = STE_debug ckt_clean;
+
+// TESTS
+
+//let test_mem =
+//    signal_input    clean2mem.
+//    signal_output   mem2clean.
+//    //
+//    node_internal   data_out.
+//    CELL "draw_hier test_mem" [
+//        mem2clean <- clean2mem<--node ? data_out,
+//        CASE data_out [
+//            clean2mem-->addr '=' '1 --- mk_node_Int 0 '2,
+//            clean2mem-->addr '=' '2 --- mk_node_Int (-1) '3,
+//            clean2mem-->addr '=' '3 --- mk_node_Int (-1) '0
+//        ] '0
+//    ]
+//;
+//
+//let test =
+//    bit_input   clk reset.
+//    bit_input   do_op.
+//    addr_input  target.
+//    bit_output  did_op.
+//    // Internal wires
+//    signal_internal clean2mem mem2clean.
+//    //
+//    CELL "test" [
+//        clean clk reset do_op target did_op mem2clean clean2mem,
+//        test_mem clean2mem mem2clean
+//    ]
+//;
+//
+//let p_test = test 'clk 'reset 'do_op 'target 'did_op;
+//let v_test = STE_debug (pexlif2fsm p_test);
+//
+//let mk_target {a::addr} =
+//    let bl = wexpr2bool [] (hw_destr a) then
+//    bl
+//;
+//
+//let ant =
+//    "clk"           is_clock 100 and
+//    "reset"         is "1"              in_cycle 0 otherwise "0" until 100 cycles and
+//    "do_op"         is "1"              in_cycle 4 otherwise "0" until 100 cycles and
+//    "target[4:0]"   is (mk_target '1)   in_cycle 4 otherwise "0" until 100 cycles
+//;
+//
+// STE "-e" v_test [] ant [] [];

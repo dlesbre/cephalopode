@@ -1,0 +1,73 @@
+load "ste.fl";
+
+TYPE "byte" 8;
+
+// This is my new cocde
+let f pre post x =
+  12;
+
+
+let inc =
+    byte_input i.
+    byte_output o.
+    CELL "draw_hier inc" [
+	o <- i '+' '1
+];
+
+let example =
+    byte_input a b c.
+    byte_output o1 o2.
+    internal b1.
+    CELL "example" [
+	inc b b1,
+	o1 <- a '+' b1,
+	o2 <- o1 '-' c
+];
+
+let p = example 'a 'b 'c 'o1 'o2;
+
+p;
+
+let ckt = pexlif2fsm p;
+
+let vis = STE_debug ckt;
+vis;
+
+// STE opt vis weak_list antecedent consequent trace_list
+// opt = "-e"
+// weak_list :: (when, node, from, to)
+//		 bool  string int int
+//
+// antecedent: [(when, node, value, from. to)]
+//              bool  string bool  int   int
+//
+//
+// consequent: [(when, node, value, from. to)]
+//              bool  string bool  int   int
+//
+// trace_list: [(node, from, to)]
+//
+
+let ant = 
+    "a[7:0]" isv "0x01" from 0 to 2 and
+    "a[7:0]" isv "0x11" from 2 to 3 and
+    "a[7:0]" isv "0xff" from 3 to 5 and
+    "b[7:0]" isv "0x22" from 0 to 5 and
+    "c[7:0]" isv "0x33" from 0 to 5
+;
+
+STE "-e" vis [] ant [] [];
+
+
+
+let ant = 
+    "a[7:0]" isv "A1[7:0]" from 0 to 2 and
+    "a[7:0]" isv "c[7:0]" from 2 to 3 and
+    "a[7:0]" isv "0xff" from 3 to 5 and
+    "b[7:0]" isv "0x0" from 0 to 5 and
+    "c[7:0]" isv "A1[7:0]" from 0 to 5
+;
+
+STE "-e" vis [] ant [] [];
+
+

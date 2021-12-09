@@ -1,0 +1,137 @@
+// IO for the arithmetic operations
+
+cload "ste.fl";
+cload (DIR^"../types.fl");
+cload (DIR^"../io-protocol.fl");
+
+STRUCT "read_alu2mem" [
+    ("start",   "bit"),
+    ("addr",    "addr")
+];
+
+STRUCT "read_mem2alu" [
+    ("done",    "bit"),
+    ("data",    "node")
+];
+
+STRUCT "write_alu2mem" [
+    ("start",   "bit"),
+    ("addr",    "addr"),
+    ("data",    "node")
+];
+
+STRUCT "alloc_mem2alu" [
+    ("done",    "bit"),
+    ("addr",    "addr")
+];
+
+let io =
+    bit_input clk reset.
+    // # Caller
+    // ## Readers
+    read_alu2mem_input  read_0_alu2mem.
+    read_mem2alu_output read_0_mem2alu.
+    read_alu2mem_input  read_1_alu2mem.
+    read_mem2alu_output read_1_mem2alu.
+    read_alu2mem_input  read_2_alu2mem.
+    read_mem2alu_output read_2_mem2alu.
+    // ## Writers
+    write_alu2mem_input write_0_alu2mem.
+    bit_output          write_0_done.
+    write_alu2mem_input write_1_alu2mem.
+    bit_output          write_1_done.
+    // ## Alloc
+    bit_input               alloc_start.
+    alloc_mem2alu_output    alloc_mem2alu.
+    // # Signals
+    signal_input    sig_in.
+    signal_output   sig_out.
+    // # Internal wires
+    rw_data_internal    read_0_in read_0_out read_1_in read_1_out read_2_in
+                        read_2_out general_read_in.
+    rw_data_internal    write_0_in write_0_out write_1_in write_1_out
+                        general_write_in.
+    alloc_data_internal alloc_in alloc_out.
+    bit_internal        read_req write_req alloc_req.
+    addr_internal       addr_out.
+    node_internal       node_out.
+    bit_internal        DEBUG.
+    //
+    CELL "draw_hier arith_io" [
+        // PROTOCOLS
+        // Read
+        read_protocol "0" clk read_0_in read_0_out,
+        read_protocol "1" clk read_1_in read_1_out,
+        read_protocol "2" clk read_2_in read_2_out,
+        // Write
+        write_protocol "0" clk write_0_in write_0_out,
+        write_protocol "1" clk write_1_in write_1_out,
+        // Alloc
+        alloc_protocol clk reset alloc_in alloc_out,
+        //
+        // SIG_IN + CALLER      --> PROTOCOLS
+        // Read
+        general_read_in <- '0<--ack  ? (sig_in-->read)
+                             <--data ? (sig_in-->node),
+        read_0_in <- general_read_in<--start ? (read_0_alu2mem-->start),
+        read_1_in <- general_read_in<--start ? (read_1_alu2mem-->start),
+        read_2_in <- general_read_in<--start ? (read_2_alu2mem-->start),
+        // Write
+        general_write_in <- '0<--ack ? (sig_in-->write),
+        write_0_in <- general_write_in<--start ? (write_0_alu2mem-->start)
+                                      <--data  ? (write_0_alu2mem-->data),
+        write_1_in <- general_write_in<--start ? (write_1_alu2mem-->start)
+                                      <--data  ? (write_1_alu2mem-->data),
+        // Alloc
+        alloc_in <- '0<--start ? alloc_start
+                      <--ack   ? (sig_in-->alloc)
+                      <--addr  ? (sig_in-->addr),
+        //
+        // PROTOCOLS + CALLER   --> SIG_OUT
+        read_req <-
+            (read_0_out-->req '|' read_1_out-->req '|' read_2_out-->req) '&'
+            '~' write_req,
+        write_req <- (write_0_out-->req '|' write_1_out-->req),
+        alloc_req <- (alloc_out-->req),
+        CASE addr_out [
+            write_0_out-->req   --- (write_0_alu2mem-->addr),
+            write_1_out-->req   --- (write_1_alu2mem-->addr),
+            read_0_out-->req    --- (read_0_alu2mem-->addr),
+            read_1_out-->req    --- (read_1_alu2mem-->addr),
+            read_2_out-->req    --- (read_2_alu2mem-->addr)
+        ] '0,
+        CASE node_out [
+            write_0_out-->req   --- write_0_out-->data,
+            write_1_out-->req   --- write_1_out-->data
+        ] '0,
+        sig_out <- '0<--read  ? read_req
+                     <--write ? write_req
+                     <--alloc ? alloc_req
+                     <--addr  ? addr_out
+                     <--node  ? node_out,
+        //
+        // PROTOCOLS            --> CALLER
+        read_0_mem2alu <- '0<--done ? (read_0_out-->done)
+                            <--data ? (read_0_out-->data),
+        read_1_mem2alu <- '0<--done ? (read_1_out-->done)
+                            <--data ? (read_1_out-->data),
+        read_2_mem2alu <- '0<--done ? (read_2_out-->done)
+                            <--data ? (read_2_out-->data),
+        write_0_done <- (write_0_out-->done),
+        write_1_done <- (write_1_out-->done),
+        alloc_mem2alu <- '0<--done ? (alloc_out-->done)
+                           <--addr ? (alloc_out-->addr),
+        DEBUG <- '0
+    ]
+;
+
+let p   = io 'clk 'reset
+    'read_0_alu2mem 'read_0_mem2alu
+    'read_1_alu2mem 'read_1_mem2alu
+    'read_2_alu2mem 'read_2_mem2alu
+    'write_0_alu2mem 'write_0_done
+    'write_1_alu2mem 'write_1_done
+    'alloc_start 'alloc_mem2alu
+    'sig_in 'sig_out;
+let ckt = pexlif2fsm p;
+let v   = STE_debug ckt;

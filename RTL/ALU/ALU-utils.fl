@@ -1,0 +1,367 @@
+// Tools used by the arithmetic operations
+
+load "ste.fl";
+cload (DIR^"../io/io-protocol.fl");
+
+// Opcode
+STRUCT "op" [
+    ("dest", "addr"),
+    ("srcA", "addr"),
+    ("srcB", "addr"),
+    ("srcC", "addr")
+];
+
+// Extended int used for operations
+TYPE "eInt" (INT_SZ + 1);
+
+/////////////////////////////////////////////////
+// More generic tools I put here "temporarely" //
+/////////////////////////////////////////////////
+
+ENUM "bit_for_FSM" ["OFF", "ON"];
+
+let bit_FSM name =
+    bit_input   clk reset.
+    bit_input   switch_on switch_off.
+    bit_output  bit_out.
+    // Internal wires
+    bit_for_FSM_internal    step.
+    //
+    CELL "bit_FSM" [
+        Moore_FSM name clk step (reset --- OFF) [
+            OFF --- switch_on   --- ON,
+            ON  --- switch_off  --- OFF
+        ],
+        bit_out <- is_ON step
+    ]
+;
+
+// Rising edge flip-flop with enable and no delay:
+// Output is equal to input when enable in up
+let re_ff_en_no_delay =
+    bit_input   clk.
+    bit_input   en.
+    input       d.
+    output      q.
+    // Internal wire
+    internal    stored_d.
+    //
+    CELL "draw_hier re_ff_en_no_delay" [
+        re_ff_en clk en d stored_d,
+        q <- (IF en THEN d ELSE stored_d)
+    ]
+;
+
+
+let changing =
+    bit_input   clk.
+    input       d.
+    bit_output  just_changed.
+    // Internal
+    internal    prev_d.
+    //
+    CELL "draw_hier just_changed" [
+        re_ff clk d prev_d,
+        just_changed <- (d '!=' prev_d)
+    ]
+;
+
+let rising_edge =
+    bit_input   clk.
+    bit_input   d.
+    bit_output  re_d.
+    // Internal
+    bit_internal    change_d.
+    //
+    CELL "draw_hier rising_edge" [
+        changing clk d change_d,
+        re_d <- (d '&' change_d)
+    ]
+;
+
+let falling_edge =
+    bit_input   clk.
+    bit_input   d.
+    bit_output  fe_d.
+    // Internal
+    bit_internal    change_d.
+    //
+    CELL "draw_hier falling_edge" [
+        changing clk d change_d,
+        fe_d <- ('~' d '&' change_d)
+    ]
+;
+
+
+// deCASE
+// demultiplexer
+// Usage:
+//  deCASE inp [
+//      condition1  --- out1,
+//      condition2  --- out2,
+//      condition3  --- out3,
+//  ] out_generic,
+
+letrec deCASE_rec {inp:: *a} {co_list:: (bit # *a) list} {fallback:: *a} {condition:: bit} =
+    CELL "draw_hier deCASE" (
+        co_list = [] => [
+            fallback <- (IF condition THEN {'0:: *a} ELSE {inp:: *a})
+        ] |
+        let co_tail = tl co_list in
+        let co_head = hd co_list in
+        let c = fst co_head in
+        let o = snd co_head in [
+            o <- (IF {('~' condition '&' c)::bit} THEN {inp:: *a} ELSE {'0:: *a}),
+            deCASE_rec inp co_tail fallback (condition '&' c)
+        ]
+    )
+;
+
+let deCASE inp condition_output_list fallback =
+    deCASE_rec inp condition_output_list fallback '0;
+
+let bla_test =
+    bit_input   foo.
+    bit_input   bar.
+    bit_output  baz1 baz0.
+    CELL "dhfslkdjfh" [
+        deCASE foo [
+            bar --- baz1
+        ] baz0
+    ]
+;
+
+let p_test   = bla_test 'foo 'bar 'baz1 'baz0;
+let ckt_test = pexlif2fsm p_test;
+let v_test   = STE_debug ckt_test;
+
+
+// Generate a STE antecedent from a list
+//   arg1 is the duration of each element in cycles
+//   arg2 is the list of values
+// Equivalent to:
+//   arg2[0] for arg1 cycles followed_by
+//   arg2[1] for arg1 cycles followed_by
+//   ...
+//   arg2[len-1] for arg1 cycles
+letrec sequence s (h:[]) = h for s cycles
+    /\ sequence s (h:t)  = h for s cycles followed_by sequence s t;
+
+
+// Use to store a value when set is high
+// Inputs
+//   <clk (bit)> the clock
+//   <set (bit)>
+//   <reset (bit)>  sets value to 0
+//   <value_in (*)> value to store (when set is high)
+// Outputs
+//   <value_out (*)> the last value given to value in when set was high
+let memorize_obj name =
+	bit_input clk set reset.
+	input value_in.
+	output value_out.
+	internal value_stored.
+	CELL (name^"_memorizer") [
+		CASE value_out [
+			set   --- value_in,
+			reset --- '0
+		] value_stored,
+		re_ff clk value_out value_stored
+	];
+
+
+// ================================================
+// § Address managers
+// ================================================
+0;
+
+// Manages an integers addresses:
+// remembers:
+// - the first address (given when set is true)
+// - the current address (given when read_ack is true)
+// Inputs
+//   <clk (bit)>      the clock
+//   <clear (bit)>    Erases all addresses (set them to addr_end)
+//   <set (bit)>      when true, set first address to addr0
+//   <reset (bit)>    when true, reset current address to first address
+//   <read_ack (bit)> when true, update current address to the one contained in at_addr_current
+//   <addr0 (addr)>   when set is true, first address of the int
+//   <at_addr_current (node)> when read_ack is true, must contain the node at addr curren
+//                    (or its laddr field)
+// Outputs:
+//   <addr_0 (addr)>       the first address
+//   <addr_current (addr)> the current address
+//   <was_initial (bit)>   set when the last chunk read was the first chunk of the number
+let readonly_addr_manager name =
+	// Inputs
+	bit_input clk clear set reset read_ack.
+	addr_input addr_in.
+	node_input at_addr_current.
+	// Outputs
+	addr_output addr_0 addr_current.
+	bit_output was_initial.
+	// Internal
+	addr_internal addr_0_prev addr_current_prev.
+	bit_internal is_initial is_initial_prev was_initial_prev.
+	CELL ("draw_hier "^name^"_readonly_address_manager") [
+		re_ff clk addr_0 addr_0_prev,
+		CASE addr_0 [
+			clear --- addr_end,
+			set   --- addr_in
+		] addr_0_prev,
+		CASE addr_current [
+			clear           --- addr_end,
+			(set '|' reset) --- addr_0,
+			read_ack        --- (at_addr_current-->laddr)
+		] addr_current_prev,
+		re_ff clk addr_current addr_current_prev,
+		// check for single chunk
+		is_initial <- addr_current '=' addr_0,
+		re_ff clk is_initial is_initial_prev,
+		CASE was_initial [
+			(clear '|' set '|' reset) --- '0,
+			read_ack                  --- is_initial_prev
+		] was_initial_prev,
+		re_ff clk was_initial was_initial_prev
+	];
+
+let readonly_addr_manager_pexlif = readonly_addr_manager "debug"
+                                   'clk 'clear 'set 'reset 'read_ack
+                                   'addr_in 'at_addr_current 'addr_0 'addr_current 'was_initial;
+let readonly_addr_manager_fsm    = pexlif2fsm readonly_addr_manager_pexlif;
+let readonly_addr_manager_vis    = STE_debug readonly_addr_manager_fsm;
+
+// // TESTS
+// add_waveform readonly_addr_manager_vis [
+// 	"clk", "clear", "set", "reset", "read_ack",
+// 	"addr_in[5:0]", "at_addr_current[14:0]", "addr_current[5:0]", "was_initial"
+// ];
+// let readonly_addr_manager_fanim = draw_fanin readonly_addr_manager_vis (0) 100 ["addr_current[5:0]", "was_initial"];
+// let test_node1 = '0<--laddr ? ('10);
+// let test_node2 = '0<--laddr ? ('08);
+// let readonly_addr_manager_test_inputs =
+// 	"clk" is_clock 20 and
+// 	"clear" is 1 for 1 cycles followed_by 0 for 19 cycles and
+// 	"set" is 1 for 2 cycles followed_by 0 for 18 cycles and
+// 	"reset" is 1 in_cycle 10 otherwise 0 until 20 cycles and
+// 	"addr_in[5:0]" is "5" for 2 cycle followed_by 0 for 18 cycles and
+// 	"read_ack" is sequence 1 [0,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0] and
+// 	"at_addr_current[14:0]" is sequence 1 ['0,'0,'0,'0,test_node1,'0,'0,'0,test_node2,'0,'0,'0,test_node1,'0,'0,'0,'0,'0,'0,'0];
+// STE "-e" readonly_addr_manager_vis [] readonly_addr_manager_test_inputs [] [];
+// readonly_addr_manager_fanim;
+0;
+
+
+// Alloc/Read/Write address manager
+// remembers:
+// - the first address (given when set is true)
+// - a read address (given when read_ack is true)
+// - a write address (next when allocating)
+// Inputs
+//   <clk (bit)>       the clock
+//   <clear (bit)>     Erases all addresses (set them to addr_end)
+//   <new (bit)>       when true, sets the write and first addr to addr_new
+//   <reset (bit)>     when true, resets read address to first address, set write address to 0
+//   <read_ack (bit)>  when true, updates read address to the one contained in at_addr_current
+//                                updates the write address to the old read address
+//   <set_to_write (bit)> when true, set first address to addr_write.
+//                     updates read to first address and write to 0.
+//   <skip (bit)>      when true, sets write addr to the read address
+//                                sets read addr to 0
+//   <addr_new (addr)> when new is true, newly allocated address
+//   <at_addr_read (node)> when read_ack is true, must contain the node at addr read
+//                     (or its laddr field)
+// Outputs:
+//   <addr_0 (addr)>     the first address
+//   <addr_read (addr)>  the address to read from
+//   <addr_write (addr)> the address to write to (previous block from addr_read)
+// Read from addr_read, write to addr_write (with a pointer to addr_read)
+let ARW_addr_manager name =
+	// Inputs
+	bit_input clk clear new reset read_ack set_to_write skip.
+	addr_input addr_new.
+	node_input at_addr_read.
+	// Outputs
+	addr_output addr_0 addr_read addr_write.
+	// Internal
+	addr_internal addr_write_prev addr_read_prev.
+	addr_internal addr_0_prev.
+    bit_internal rw_reset.
+	CELL ("draw_hier "^name^"_ARW_address_manager") [
+		re_ff clk addr_0 addr_0_prev,
+		CASE addr_0 [
+			clear        --- addr_end,
+			new          --- addr_new,
+            set_to_write --- addr_write_prev
+		] addr_0_prev,
+		re_ff clk addr_read addr_read_prev,
+        rw_reset <- reset '|' set_to_write,
+		CASE addr_read [
+			(clear '|' skip) --- addr_end,
+			rw_reset         --- addr_0,
+			read_ack         --- (at_addr_read-->laddr),
+			new              --- addr_write_prev
+		] addr_read_prev,
+		re_ff clk addr_write addr_write_prev,
+		CASE addr_write [
+			clear    --- addr_end,
+			rw_reset --- addr_end,
+			(read_ack '|' skip) --- addr_read_prev,
+			new      --- addr_new
+		] addr_write_prev
+	];
+
+let ARW_addr_manager_pexlif = ARW_addr_manager "debug"
+                              'clk 'clear 'new 'reset 'read_ack 'set_to_write 'skip
+                              'addr_0 'addr_new 'at_addr_read
+                              'addr_read 'addr_write;
+let ARW_addr_manager_fsm    = pexlif2fsm ARW_addr_manager_pexlif;
+let ARW_addr_manager_vis    = STE_debug ARW_addr_manager_fsm;
+
+// // TESTS
+// add_waveform ARW_addr_manager_vis [
+// 	"clk", "clear", "new", "reset", "read_ack",
+// 	"addr_new[5:0]", "at_addr_read[14:0]", "addr_read[5:0]", "addr_write[5:0]"
+// ];
+// let ARW_addr_manager_fanim = draw_fanin ARW_addr_manager_vis (0) 100 ["addr_read[5:0]", "addr_write[5:0]"];
+// let test_node1 = '0<--laddr ? ('10);
+// let test_node2 = '0<--laddr ? ('08);
+// let ARW_addr_manager_test_inputs =
+// 	"clk" is_clock 20 and
+// 	"clear" is 1 for 1 cycles followed_by 0 for 17 cycles followed_by 1 for 2 cycles and
+// 	"reset" is 1 in_cycle 15 otherwise 0 until 20 cycles and
+// 	"new" is sequence 1 [0,1,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0] and
+// 	"addr_new[5:0]" is sequence 1 ["0", "1","0","2","0","4","0","0"] and
+// 	"read_ack" is sequence 1 [0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0] and
+// 	"at_addr_read[14:0]" is sequence 1 ['0,'0,'0,'0,'0,'0,test_node1,'0,'0,'0,test_node2,'0,'0,'0,'0,'0,'0,'0,'0,'0];
+// STE "-e" ARW_addr_manager_vis [] ARW_addr_manager_test_inputs [] [];
+// ARW_addr_manager_fanim;
+
+
+
+// Condenses all req/ack generated by the Jeremy's language (.prog files)
+// to memory signals.
+let memory_interface =
+	bit_input alloc_req read_req write_req.
+	addr_input read_addr write_addr.
+	node_input write_node.
+	bit_output alloc_ack read_ack write_ack.
+	addr_output alloc_addr.
+	node_output read_node.
+	signal_input sig_in.
+	signal_output sig_out.
+	bit_internal rw_ack.
+	CELL "draw_hier memory_interface" [
+        // No operation can run in parallel, bind all ack's together
+		rw_ack <- sig_in-->read '|' sig_in-->write '|' sig_in-->alloc,
+		alloc_ack  <- rw_ack,
+		read_ack   <- rw_ack,
+		write_ack  <- rw_ack,
+		alloc_addr <- sig_in-->addr,
+		read_node  <- sig_in-->node,
+		sig_out <- '0<--alloc ? alloc_req
+		             <--read  ? read_req
+		             <--write ? write_req
+		             <--addr  ? (IF read_req THEN read_addr ELSE write_addr)
+		             <--node  ? write_node
+	];

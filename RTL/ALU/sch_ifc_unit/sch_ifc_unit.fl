@@ -1,0 +1,96 @@
+// Instuctions for interacting with scheduler
+
+cload (DIR^"../ALU-utils.fl");
+cload (DIR^"sch_ctrl.fsm.fl");
+
+//    // SCH_IFC UNIT
+//    bit_input   read_a_req.
+//    addr_input  a_src_addr.
+//    bit_output  read_a_ack.
+//    Int_output  a.
+//    bit_output  a_end.
+//    //
+//    bit_input   read_b_req.
+//    addr_input  b_src_addr.
+//    bit_output  read_b_ack.
+//    Int_output  b.
+//    bit_output  b_end.
+//    // Internal
+//
+//    rw_data_internal    read_a_in read_a_out.
+//    rw_data_internal    read_b_in read_b_out.
+//    node_internal       a_node b_node.
+//    signal_internal     sig_a_out sig_b_out.
+//    addr_internal       cur_a_addr cur_b_addr.
+
+let sch_ifc_unit =
+    bit_input   clk.
+    bit_input   reset.
+    // PRIMITIVE UNIT
+    bit_input   proc_init_req.
+    addr_input  a_src_addr.
+    addr_input  b_src_addr.
+    addr_input  c_src_addr.
+    addr_input  d_src_addr.
+    bit_output  op_ack.
+    bit_output  answer.
+    // MEMORY
+    signal_input    sig_in.
+    signal_output   sig_out.
+    // Internals
+    bit_internal do_op.
+    bit_internal read_ack.
+    //
+    bit_internal do_update.
+    bit_internal flush.
+    bit_internal read_a_req.
+    bit_internal read_b_req.
+    bit_internal read_c_req.
+    bit_internal read_d_req.
+    CELL "draw_hier sch_ifc_unit" [
+//	sch_ctrl_fsm clk reset do_op read_ack
+//		     do_update flush
+//		     read_a_req read_b_req read_c_req read_d_req,
+//
+//
+//
+//        // # A
+//        // Protocol
+//        read_a_in <- '0<--start ? read_a_req
+//                       <--ack   ? (sig_in-->read)
+//                       <--data  ? (sig_in-->node),
+//        read_protocol "a" clk read_a_in read_a_out,
+//        read_a_ack <- read_a_out-->ack,
+//        a_node	   <- read_a_out-->data,
+//        cur_a_addr <- a_node-->laddr,
+//        a_end	   <- cur_a_addr '=' addr_end,
+//        a	   <- a_node-->int,
+//        sig_a_out  <- '0<--read ? (read_a_out-->req)
+//                        <--addr ? cur_a_addr,
+//
+//        // # B
+//        // Setting bits
+//        b_end <- cur_b_addr '=' addr_end,
+//        read_b_ack <- (read_b_out-->ack),
+//        // Protocol
+//        read_b_in <- '0<--start ? read_b_req
+//                       <--ack   ? (sig_in-->read)
+//                       <--data  ? (sig_in-->node),
+//        read_protocol "b" clk read_b_in read_b_out,
+//        b_node <- (read_b_out-->data),
+//        cur_b_addr <- (b_node-->laddr),
+//        // Signal
+//        sig_b_out <- '0<--read ? (read_b_out-->req)
+//                       <--addr ? cur_b_addr,
+//        // Data out
+//        b <- b_node-->int,
+//
+//        // # SIGNAL OUT
+//        CASE sig_out [
+//            read_a_req  --- sig_a_out,
+//            read_b_req  --- sig_b_out
+//        ] '0
+//
+];
+
+

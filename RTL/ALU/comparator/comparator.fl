@@ -1,0 +1,256 @@
+// Comparator unit
+// Makes integer comparisons
+
+cload (DIR^"../ALU-utils.fl");
+cload (DIR^"comparator.fsm.fl");
+
+let comparator_io =
+    bit_input   clk.
+    bit_input   reset.
+    // COMPARATOR UNIT
+    bit_input   read_a_req.
+    addr_input  a_src_addr.
+    bit_output  read_a_ack.
+    Int_output  a.
+    bit_output  a_end.
+    bit_input   read_b_req.
+    addr_input  b_src_addr.
+    bit_output  read_b_ack.
+    Int_output  b.
+    bit_output  b_end.
+    // MEMORY
+    signal_input    sig_in.
+    signal_output   sig_out.
+    // Internal
+    rw_data_internal    read_a_in read_a_out.
+    rw_data_internal    read_b_in read_b_out.
+    node_internal       a_node b_node.
+    signal_internal     sig_a_out sig_b_out.
+    addr_internal       read_a_addr read_b_addr.
+    addr_internal       cur_a_addr cur_b_addr.
+    bit_internal        a_rec b_rec.
+    //
+    CELL "draw_hier comparator_io" [
+        // # A
+        // Setting bits
+        bit_FSM "a_rec" clk reset
+            read_a_ack '0 a_rec,
+        a_end <- cur_a_addr '=' addr_end,
+        read_a_ack <- (read_a_out-->ack),
+        // Protocol
+        read_a_in <- '0<--start ? read_a_req
+                       <--ack   ? (sig_in-->read)
+                       <--data  ? (sig_in-->node),
+        read_protocol "a" clk read_a_in read_a_out,
+        a_node <- (read_a_out-->data),
+        cur_a_addr <- (a_node-->laddr),
+        // Signal
+        read_a_addr <- (IF a_rec THEN cur_a_addr ELSE a_src_addr),
+        sig_a_out <- '0<--read ? (read_a_out-->req)
+                       <--addr ? read_a_addr,
+        // Data out
+        a <- a_node-->int,
+        // # B
+        // Setting bits
+        bit_FSM "b_rec" clk reset
+            read_b_ack '0 b_rec,
+        b_end <- cur_b_addr '=' addr_end,
+        read_b_ack <- (read_b_out-->ack),
+        // Protocol
+        read_b_in <- '0<--start ? read_b_req
+                       <--ack   ? (sig_in-->read)
+                       <--data  ? (sig_in-->node),
+        read_protocol "b" clk read_b_in read_b_out,
+        b_node <- (read_b_out-->data),
+        cur_b_addr <- (b_node-->laddr),
+        // Signal
+        read_b_addr <- (IF b_rec THEN cur_b_addr ELSE b_src_addr),
+        sig_b_out <- '0<--read ? (read_b_out-->req)
+                       <--addr ? read_b_addr,
+        // Data out
+        b <- b_node-->int,
+        // # SIGNAL OUT
+        CASE sig_out [
+            read_a_req  --- sig_a_out,
+            read_b_req  --- sig_b_out
+        ] '0
+    ]
+;
+
+let p_io = comparator_io 'clk 'reset 'read_a_req 'a_src_addr 'read_a_ack 'a 'a_end 'read_b_req 'b_src_addr 'read_b_ack 'b 'b_end 'sig_in 'sig_out;
+
+let ckt_io = pexlif2fsm p_io;
+
+
+let v_io = STE_debug ckt_io;
+
+
+// BRAINS
+let comparator_eq =
+    bit_input   clk.
+    bit_input   reset.
+    // BRAIN
+    Int_input   a.
+    bit_input   a_end.
+    Int_input   b.
+    bit_input   b_end.
+    bit_input   do_update.
+    bit_output  answer.
+    bit_output  stop.
+    // Internal
+    bit_internal    cur_eq eq.
+    bit_internal    update_now.
+    //
+    CELL "comparator_eq" [
+        cur_eq <- ((a '=' b) '&' (a_end '=' b_end)),
+        eq <- reset '|' (cur_eq '&' answer),
+        rising_edge clk do_update update_now,
+        re_ff_en_no_delay clk
+            (update_now '|' reset) eq answer,
+        stop <- '~' answer
+    ]
+;
+
+ENUM "comparator_gt_mode" [ "AB", "A", "B" ];
+
+let comparator_gt =
+    bit_input   clk.
+    bit_input   reset.
+    // BRAIN
+    Int_input   a.
+    bit_input   a_end.
+    Int_input   b.
+    bit_input   b_end.
+    bit_input   do_update.
+    bit_output  answer.
+    // Internal
+    comparator_gt_mode_internal mode.
+    eInt_internal abs_a abs_b.
+    bit_internal  gt_a_b cur_gt_a_b cur_eq_a_b a_neg b_neg ab_sign.
+    //
+    CELL "comparator_gt" [
+        Moore_FSM "gt_mode" clk mode (reset --- AB) [
+            AB --- do_update '&' a_end '&' b_end --- AB,
+            AB --- do_update '&' a_end --- B,
+            AB --- do_update '&' b_end --- A
+        ],
+        // We need to extend because '<' is signed
+        abs_a <- ZX a,
+        abs_b <- ZX b,
+        cur_gt_a_b <- abs_a '>' abs_b,
+        cur_eq_a_b <- a '=' b,
+        bit_FSM "gt_a_b" clk reset
+            (do_update '&' cur_gt_a_b)
+            (do_update '&' ('~'(cur_gt_a_b '|' cur_eq_a_b)))
+            gt_a_b,
+        a_neg <- (a-->msb),
+        b_neg <- (b-->msb),
+        ab_sign <- (IF (a_neg '^' b_neg)
+            THEN b_neg // different signs, true if B < 0
+            ELSE (gt_a_b) // Same sign, flip if negative
+        ),
+        CASE answer [
+            is_AB mode  --- ab_sign,
+            is_A  mode  --- '~' a_neg, // A longer then B => gt if A positive
+            is_B  mode  --- b_neg // B longer then A => gt if B negative
+        ] 'X
+    ]
+;
+
+let p_cgt = comparator_gt 'clk 'reset 'a 'a_end 'b 'b_end 'do_update 'answer;
+
+let ckt_cgt = pexlif2fsm p_cgt;
+
+
+let v_cgt = STE_debug ckt_cgt;
+
+let comparator_brain =
+    bit_input   clk.
+    bit_input   reset.
+    // COMPARATOR UNIT
+    bit_input   is_gt.
+    bit_input   is_eq.
+    Int_input   a.
+    bit_input   a_end.
+    bit_input   read_a_ack.
+    Int_input   b.
+    bit_input   b_end.
+    bit_input   read_b_ack.
+    bit_output  answer.
+    bit_output  stop.
+    // Internal
+    bit_internal    eq_answer eq_stop gt_answer.
+    bit_internal    ready_for_update do_update.
+    //
+    CELL "draw_hier comparator_brain" [
+        bit_FSM "ready_for_update" clk reset
+            read_a_ack do_update ready_for_update,
+        do_update <- read_b_ack '&' ready_for_update,
+        comparator_eq clk reset
+            a a_end b b_end do_update
+            eq_answer eq_stop,
+        comparator_gt clk reset
+            a a_end b b_end do_update gt_answer,
+        stop <- '~' is_gt '&' eq_stop,
+        answer <- (gt_answer '&' is_gt) '|' (eq_answer '&' is_eq)
+    ]
+;
+
+let p_brain = comparator_brain 'clk 'reset 'is_gt 'is_eq 'a 'a_end 'read_a_ack 'b 'b_end 'read_b_ack 'answer 'stop;
+
+let ckt_brain = pexlif2fsm p_brain;
+
+
+let v_brain = STE_debug ckt_brain;
+
+//
+// Comparator unit: compares two integers
+// Opcode:
+//               eq_gt | '~' eq_gt
+//             -------------------
+// '~' eq_req |  A > B |   NOOP
+// -------------------------------
+//     eq_req | A >= B |  A = B
+//
+let comparator_unit =
+    bit_input   clk.
+    bit_input   reset.
+    // PRIMITIVE UNIT
+    bit_input   eq_req.
+    bit_input   gt_req.
+    addr_input  a_src_addr.
+    addr_input  b_src_addr.
+    bit_output  op_ack.
+    bit_output  answer.
+    // MEMORY
+    signal_input    sig_in.
+    signal_output   sig_out.
+    // Internal wires
+    bit_internal    a_end b_end stop op_req.
+    bit_internal    read_a_req read_a_ack read_b_req read_b_ack flush.
+    Int_internal    a b.
+    //
+    CELL "draw_hier comparator_unit" [
+        op_req <- eq_req '|' gt_req,
+        // Manager
+        comparator_manager clk reset
+            a_end b_end op_req read_a_ack read_b_ack stop
+            flush op_ack read_a_req read_b_req,
+        comparator_io clk (reset '|' (op_ack '&' '~' op_req))
+            read_a_req a_src_addr read_a_ack a a_end
+            read_b_req b_src_addr read_b_ack b b_end
+            sig_in sig_out,
+        comparator_brain clk (reset '|' flush)
+            gt_req eq_req
+            a a_end read_a_ack
+            b b_end read_b_ack
+            answer stop
+    ]
+;
+
+let p = comparator_unit 'clk 'reset 'eq_req 'gt_req 'a_src_addr 'b_src_addr 'op_ack 'answer 'sig_in 'sig_out;
+
+let ckt = pexlif2fsm p;
+
+
+let v = STE_debug ckt;

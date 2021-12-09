@@ -1,0 +1,282 @@
+// Test file for both dividers
+
+cload (DIR^"div.fl");
+cload (DIR^"div2.fl");
+
+
+// Initial values for the ram
+// let ram_initial = [
+// 	(0x01, 0x17, 0x00),
+// 	(0x02, 0x3e, 0x00),
+// 	(0x03, 0x05, 0x02),
+// 	(0x04, 0x00, 0x00),
+// 	(0x05, 0x01, 0x00),
+// 	(0x06, 0x08, 0x01),
+// 	(0x07, 0x03, 0x00),
+// 	(0x08, 0x3f, 0x09),
+// 	(0x09, 0x00, 0x00),
+// 	(0x10, 0x0f, 0x00)
+// ];
+let ram_initial = ram_from_ints 1 [232,75];
+let addr_n = 0x01;
+let addr_d = 0x02;
+// first free address (for alloc)
+let free_addr = mk_addr (min_free_addr ram_initial);
+let ram = mk_ram ram_initial;
+let sim_length = 600; // steps in STE
+
+// Circuit that tests the divider
+// Arguments:
+//  - main is either divider_main or divider2_main
+//  - the initial ram
+//  - the first free address in the RAM
+// Wires:
+//  - <clk (bit)>      the clock
+//  - <init_mem (bit)> set high once to initialize the memory
+//  - <reset (bit)>    reset the divider
+//  - <do_op (bit)>    operation REQ
+//  - <N, D (addr)>    numerator and denominator pointers
+//  - <done (bit)>     operation ACK
+//  - <zero_division_error (bit)> indicates zero division
+let divider_tester main ram_in ram_free_addr =
+	bit_input clk init_mem reset do_op.
+	addr_input numerator denominator.
+	addr_output quotient remainder.
+	bit_output done zero_division_error.
+	signal_internal sig_in sig_out.
+	CELL "draw_hier divider_tester" [
+		main clk reset do_op numerator denominator quotient remainder done zero_division_error sig_in sig_out,
+		ideal_memory ram_in ram_free_addr clk init_mem sig_out sig_in
+	];
+
+let divider_tester_pexlif = divider_tester divider_main ram free_addr
+	'clk 'init_mem 'reset 'do_op
+	'numerator 'denominator 'quotient 'remainder
+	'done 'zero_division_error;
+let divider_tester_fsm    = pexlif2fsm divider_tester_pexlif;
+let divider_tester_vis    = STE_debug divider_tester_fsm;
+let divider_tester_fanim  = draw_fanin divider_tester_vis (0) 100 [
+	"quotient[5:0]",
+	"remainder[5:0]",
+	"done", "zero_division_error",
+	"sig_out[23:0]"
+];
+
+
+// List of waveforms to draw
+let divider_waveforms = ["clk",
+	"do_op", "done", "zero_division_error" //, "sig_in[23:0]","sig_out[23:0]",
+	//, "i1/i3/state[6:0]", "i1/i4/state[1:0]", "i1/i4/I[5:0]"
+	//, "i1/swap"
+	//, "i1/i1/addr_qr[5:0]", "i1/qr_end"
+	//, "i1/swap", "i1/set_swap", "i1/i4/QR_calc[5:0]"
+	//, "i1/i1/read_qr_valid", "i1/i1/addr_qr[5:0]", "i1/i1/addr_qr_write[5:0]"
+	//, "i1/read_n_int[5:0]","i1/read_d_int[5:0]"
+	//, "i1/read_nr_int[5:0]"
+	//, "i1/read_qr_int[5:0]"
+	//, "i1/read_r1_int[5:0]", "i1/read_r2_int[5:0]"
+	, "sig_out[23]", "sig_out[22]", "sig_out[21]" //, "sig_out[20:6]",
+	, "sig_out[5:0]", "sig_out[20:15]", "sig_out[14:9]"//, "sig_out[8:6]"
+	, "sig_in[23]", "sig_in[22]", "sig_in[21]" //, "sig_in[20:6]",
+	, "sig_in[5:0]", "sig_in[20:15]", "sig_in[14:9]"//, "sig_in[8:6]"
+	//, "i1/i4/sub_carry_in", "i1/i4/shift_carry_in", "i1/i4/shift_carry_in_prev", "i1/i4/save_carrys"
+	//, "i1/i4/R2_calc[5:0]", "i1/i4/R1_calc[5:0]"
+	//, "i1/reset_d"
+	//, "i1/reset_q"
+	//, "i1/read_d_int[5:0]", "i1/i4/d_abs_value[5:0]"
+	//, "i1/i4/final_r_write"
+	//, "i1/i4/short_r[5:0]", "i1/i4/short_r_prev[5:0]"
+	//, "i1/i4/R1_calc[5:0]", "i1/i4/R2_calc[5:0]"
+	//, "i1/i4/QR_calc[5:0]"
+	//, "i1/d_is_negative", "i1/n_is_negative"
+
+	, "i1/i1/state_divider[4:0]", "i1/i1/var_mask[5:0]"
+	, "i1/i1/var_node_r1[14:9]", "i1/i1/var_node_r2[14:9]"
+	, "i1/i1/var_shift_carry", "i1/i1/var_sub_carry"
+	, "i1/i1/var_node_d[14:9]", "i1/i1/var_node_nr[14:9]"
+];
+let divider_tester_waveform = add_waveform divider_tester_vis divider_waveforms;
+
+
+// Generate test inputs for the divider
+// Arguments:
+//  <steps (int)> the number of steps to simulate
+//  <addr_n (int)> the address of N in the RAM
+//  <addr_d (int)> the address of D in the RAM
+let divider_tester_test_inputs steps addr_n addr_d =
+	let addr_n_in = {(mk_addr addr_n)::addr} in
+	let addr_d_in = {(mk_addr addr_d)::addr} in
+	"clk" is_clock steps
+	and "init_mem" is 1 for 1 cycles followed_by 0 for (steps-1) cycles
+	and "do_op" is 0 for 2 cycles followed_by 1 for (steps-2) cycles
+	and "reset" is 1 for 1 cycles followed_by 0 for (steps-3) cycles
+	and "numerator[5:0]" is addr_end for 2 cycles followed_by addr_n_in for 1 cycles followed_by addr_end for (steps-3) cycles
+	and "denominator[5:0]" is addr_end for 2 cycles followed_by addr_d_in for 1 cycles followed_by addr_end for (steps-3) cycles;
+//let f x = c ste ["i2/ram[2][14:0]"] x;
+let divider_tester_ste = STE "-e" divider_tester_vis [] (divider_tester_test_inputs sim_length addr_n addr_d) [] [];
+0;
+
+// Calculates expected result (Q,R) for division N / D
+let divider_expected_values N D =
+	(D = 0)
+	=> (0,0)
+	|
+	let Q = N / D in
+	let R = N % D in
+	let sign_d = D > 0 => 1 | -1 in
+	(R >= 0) => (Q, R)
+	         |  (Q - sign_d, sign_d*D + R);
+
+// Checks a STE simulation for correct results
+// Returns T if correct, returns F and displays error message if not
+let divider_checker ste addr_n addr_d =
+	let N = get_ram_number ste "i2/ram" 0 addr_n in
+	let D = get_ram_number ste "i2/ram" 0 addr_d in
+	let end_time = last_high ste "done" in
+	(end_time < 0)
+		=>
+			printf "ERROR: \"done\" never goes high - simulation too short\n  N = %s\n  D = %s\n"
+			(sprint_number N) (sprint_number D)
+			fseq F
+		|
+	let correct = sprintf "Correct result for %5d / %5d in %4d steps\n" N D end_time in
+	let N_end = get_ram_number ste "i2/ram" end_time addr_n in
+	let D_end = get_ram_number ste "i2/ram" end_time addr_d in
+	((N != N_end) OR (D != D_end))
+		=>
+			printf "ERROR: Values of N or D have been modified.\n  N = %s at t = 0\n  N = %s at t = %d\n  D = %s at t = 0\n  D = %s at t = %d\n"
+			(sprint_number N) (sprint_number N_end) end_time (sprint_number D) (sprint_number D_end) end_time
+			fseq F
+		|
+	let zero_div = get_ste_value ste "zero_division_error" end_time in
+	let addr_q = get_ste_value ste "quotient[5:0]" end_time in
+	let addr_r = get_ste_value ste "remainder[5:0]" end_time in
+	(D = 0)
+		=> (
+			((zero_div = 1) AND (addr_q = 0) AND (addr_r = 0))
+			=> print correct fseq T
+			| (printf "ERROR: Invalid result in division by 0.\n  N = %s\n  D = %s\n  zero_div = %d (expected 1)\n  addr_Q = %d\n  addr_R = %d\n"
+				(sprint_number N) (sprint_number D) zero_div addr_q addr_r) fseq F
+		)
+		|
+	let Q_got = get_ram_number ste "i2/ram" end_time addr_q in
+	let R_got = get_ram_number ste "i2/ram" end_time addr_r in
+	val (Q_exp, R_exp) = divider_expected_values N D in
+	((zero_div = 0) AND (Q_got = Q_exp) AND (R_got = R_exp))
+	  => print correct fseq T
+		| printf "ERROR: Invalid division result.\n  N = %s\n  D = %s\n  zero_div = %d (expected 0)\n  Q expected = %s\n  Q got      = %s\n  R expected = %s\n  R got      = %s\n"
+			(sprint_number N) (sprint_number D) zero_div (sprint_number Q_exp) (sprint_number Q_got) (sprint_number R_exp) (sprint_number R_got)
+		fseq F;
+
+// // Prints expected values to compare to those given by the divider
+// let expected ram_initial addr_n addr_d =
+// 	let N = get_number ram_initial addr_n in
+// 	let D = get_number ram_initial addr_d in
+// 	D = 0
+// 		=> printf "\n============ DIVIDER TEST ============\n  N = %s\n  D = %s\nZERO DIVISION ERROR\n\n"
+// 			(sprint_number N) (sprint_number D)
+// 		|	let Q = N / D in
+// 		  let R = N % D in
+// 		  R >= 0
+// 				=> printf "\n============ DIVIDER TEST ============\n  N = %s\n -N = %s\n  D = %s\n -D = %s\n  Q = %s\n -Q = %s\n  R = %s\n\n"
+// 				    (sprint_number N) (sprint_number (-N)) (sprint_number D) (sprint_number (-D))
+// 				    (sprint_number Q) (sprint_number (-Q)) (sprint_number R)
+// 				| printf "\n============ DIVIDER TEST ============\n  N = %s\n -N = %s\n  D = %s\n -D = %s\n  Q = %s\n -Q = %s\n  R = %s\n\n"
+// 				    (sprint_number N) (sprint_number (-N)) (sprint_number D) (sprint_number (-D))
+// 				    (sprint_number (Q+1)) (sprint_number (-Q-1)) (sprint_number (R-D));
+// expected ram_initial addr_n addr_d;
+0;
+
+// Run a single test of the divider.
+// Arguments:
+//  - <numerator, denominator (int)> pair to test
+//  - <sim_length (int)> - length of the simulation to run
+//  - <show_window (bool)> - if true, display debug window
+let run_divider_test main numerator denominator sim_length show_window =
+	let ram = ram_from_ints 1 [numerator,denominator] in
+	let divider_tester_pexlif =
+		divider_tester main (mk_ram ram) (mk_addr (min_free_addr ram))
+		'clk 'init_mem 'reset 'do_op 'numerator 'denominator 'quotient 'remainder 'done 'zero_division_error in
+	let divider_tester_fsm    = pexlif2fsm divider_tester_pexlif in
+	let divider_tester_inputs = divider_tester_test_inputs sim_length 1 2 in
+	let divider_tester_ste    =
+		show_window
+			=> let divider_tester_vis = STE_debug divider_tester_fsm in
+			   add_waveform divider_tester_vis divider_waveforms fseq
+				 STE "-e" divider_tester_vis [] divider_tester_inputs [] []
+			| STE "-e" divider_tester_fsm [] divider_tester_inputs [] []
+	in divider_checker divider_tester_ste 1 2;
+
+
+// Runs the divider on a series of values
+// Arguments:
+//  - <show_window (bool)> if true show debug window/waveforms
+//  - <sim_length (int)> the length of the STE simulation
+//                       (must be long enough for the divider to complete)
+//  - <test_values (int#int#int#bool list)>
+//    list of (numerator,denominator,sim_length,show_window) with
+//     - numerator, denominator pair to test
+//     - sim_length - length of the simulation to run
+//     - show_window - if true, display debug window
+let run_divider_test_series main test_values =
+	letrec test_iterator count ([]) = count
+	    /\ test_iterator count ((num,denom,sim_length,show_window):next) =
+			(run_divider_test main num denom sim_length show_window)
+				=> test_iterator (count + 1) next
+				|  test_iterator count next in
+	print "\n\n================== RUNNING DIVIDER TESTS ====================\n" fseq
+	let len = length test_values in
+	let valid = test_iterator 0 test_values in
+	printf "================== PASSED %d out of %d TESTS ====================\n\n\n" valid len;
+
+
+// ==================================
+// § Actual test
+// ==================================
+
+// let main = divider_main;
+let main = divider2_main;
+
+// divider_tester_ste;
+// divider_tester_waveform;
+// divider_tester_fanim;
+// divider_checker main divider_tester_ste addr_n addr_d;
+
+// run_divider_test 2048 1024 800 T;
+
+let test_series_unsigned = run_divider_test_series main [
+	(5,0,100,F),
+	(1024,0,100,F),
+	(18,1,100,F),
+	(1832,1,100,F),
+	(18,24,400,F),
+	(232,75,800, F),
+	(63, 12, 400, F),
+	(1024, 2048, 1800,F),
+	(2048, 1024, 800,F),
+	(2024, 1048, 800,F),
+	(289, 68, 500, F),
+	(226, 18, 500, F)
+];
+
+let test_series_signed = run_divider_test_series main [
+	(int_from_chunks [0x12,0x20], -1, 300, F),
+	(1280, -335, 600, F),
+	(-1280, 335, 600, F),
+	(-1280, -335, 600, F),
+	(1268, -68, 500, F),
+	(-4789, -1450, 800, F),
+	(-25,-10,200,F),
+	(75,-08,400,F),
+	(-75,-08,400,F),
+	(-75,08,400,F),
+	(-8,3,300,F),
+	(6,-2,300,F),
+	(-67, 7, 400, F),
+	(-289, -68, 500, F),
+	(-1000,100,800,F),
+	(int_from_chunks [0x20], -1, 300, F)
+];
+
+test_series_unsigned;
+test_series_signed;

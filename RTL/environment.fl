@@ -1,0 +1,247 @@
+cload (DIR^"types.fl");
+
+// make_abstract_ROM <name> <dist_locs> <addr_type> <data_type>
+//	Creates two functions:
+//		<name>_ROM  which is a hardware module makig function that
+//		takes arguments:
+//			        addr :: <addr_type>
+//			        data :: <data_type>
+//	and
+//		make_<name>_ant which is a function that takes a list
+//	of (address, data) pairs. Note that both the address and data
+//	fields can be symbolic.
+//
+// Arguments:
+//	<name>		name used for the functions created
+//	<dist_locs>	How many distinct locations needed
+//	<addr_type>	Name of address type
+//	<data_type>	Name of data type
+//
+let make_abstract_ROM name distinct_locations addr_type data_type =
+    let sDLOCS = sprintf "%d" distinct_locations in
+    let sAT = addr_type in
+    let sDT = data_type in
+    eval_fl_code
+    <{
+    begin_abstype;
+    //
+    let mk_var name =
+	let r_sz = hw_size {'a:: *r} in
+	let nds = md_expand_vector name in
+	length nds != r_sz => eprintf "Length mismatch for %s" name |
+	{(hw_constr (W_EXPLICIT_VAR r_sz name)):: *r}
+    ;
+    //
+    letrec EMM_rec =
+	list_input		data_l.
+	list_input		addr_l.
+	`sAT`_input		addr.
+	`sDT`_output	out.
+	`sDT`_internal rem.
+	CELL "EMM" (
+	    data_l = [] => [out <- 'X] |
+	    let my_data = hd data_l in
+	    let my_addr = hd addr_l in
+	    (my_addr <: my_addr):	    // Just keep the value
+	    (my_data <: my_data):	    // Just keep the value
+	    (out <- (IF (my_addr '=' addr) THEN my_data ELSE rem)):
+	    (EMM_rec (tl data_l) (tl addr_l) addr rem):[]
+    );
+    //
+    let EMM name =
+	`sAT`_input    addr.
+	`sDT`_output   out.
+	list_internal `sDLOCS` `name`EMM_dta `name`EMM_adr.
+	let pfn = sprintf "draw_hier {EMM %s (%d)}" name `sDLOCS` in
+	CELL pfn [
+	    EMM_rec `name`EMM_dta `name`EMM_adr addr out
+    ];
+    //
+    let `name`_ROM =
+	`sAT`_input	    addr.
+	`sDT`_output	    data.
+	//
+	CELL "draw_hier ROM" [
+	    EMM "MEM_EMM" addr data
+    ];
+    //
+    let make_`name`_ant ckt addr_data_list =
+	length addr_data_list > `sDLOCS` =>
+	    eprintf "Too many address/data pairs in mk_EMM_ant! Max `sDLOCS`" 
+	|
+	let l1 = filter (str_is_substr "`name`EMM_") (vectors ckt) then
+	length l1 != 2 => eprintf "More than one %s set of nodes" "EMM_" |
+	let pref = hd (str_split (hd l1) "EMM_") in
+	let asz = hw_size {'0::`sAT`} in
+	let dsz = hw_size {'0::`sDT`} in
+	let mk_a_vec i = 
+	    {mk_var (sprintf "%sEMM_adr[%d][%d:0]" pref i (asz-1))::`sAT`}
+	in
+	let mk_d_vec i =
+	    {mk_var (sprintf "%sEMM_dta[%d][%d:0]" pref i (dsz-1))::`sDT`}
+	in
+	letrec mk i ((a,d):rem) =
+	    ((mk_a_vec i) is a in_phase 0) and
+	    ((mk_d_vec i) is d in_phase 0) and
+	    (mk (i-1) rem)
+	 /\\    mk i [] = []
+	in
+	mk (`sDLOCS`-1) addr_data_list
+    ;
+    end_abstype `name`_ROM make_`name`_ant;
+    }> "functor"
+;
+
+// make_abstract_RAM <name> <delay> <dist_locs> <addr_type> <data_type>
+//	Creates two functions:
+//		<name>_RAM  which is a hardware module makig function that
+//		takes arguments:
+//			        addr :: <addr_type>
+//			        data :: <data_type>
+//	and
+//		make_<name>_ant which is a function that takes a list
+//	of (address, data) pairs. Note that both the address and data
+//	fields can be symbolic.
+//
+// Arguments:
+//	<name>		name used for the functions created
+//	<dist_locs>	How many distinct locations needed
+//	<addr_type>	Name of address type
+//	<data_type>	Name of data type
+//
+let make_abstract_RAM name distinct_locations addr_type data_type =
+    let sDLOCS = sprintf "%d" distinct_locations in
+    let sAT = addr_type in
+    let sDT = data_type in
+    eval_fl_code
+    <{
+    begin_abstype;
+    //
+    let mk_var name =
+	let r_sz = hw_size {'a:: *r} in
+	let nds = md_expand_vector name in
+	length nds != r_sz => eprintf "Length mismatch for %s" name |
+	{(hw_constr (W_EXPLICIT_VAR r_sz name)):: *r}
+    ;
+    //
+    letrec EMM_rec =
+	list_input		{vld_l :: bit list}.
+	list_input		data_l.
+	list_input		addr_l.
+	`sAT`_input		addr.
+	bit_input		write.
+	`sDT`_input		din.
+	`sDT`_output		dout.
+	`sDT`_internal rem.
+	bit_internal		cwrite.
+	bit_internal		n_vld.
+	`sAT`_internal		n_addr.
+	`sDT`_internal		n_data.
+	CELL "EMM" (
+	    data_l = [] => [dout <- 'X] |
+	    let my_vld  = hd vld_l in
+	    let my_data = hd data_l in
+	    let my_addr = hd addr_l in
+	    (n_vld <- (IF ('~' my_vld) THEN write ELSE my_vld)):
+	    (my_vld <: n_vld):
+	    (n_addr <- (IF ('~' my_vld '&' write) THEN addr ELSE my_addr)):
+	    (my_addr <: n_addr):
+	    (n_data <- (IF (('~' my_vld  '&' write) '|'
+			     ((my_addr '=' addr) '&' write))
+			THEN din ELSE my_data)):
+	    (my_data <: n_data):
+	    (dout <- (IF (my_addr '=' addr) THEN my_data ELSE rem)):
+	    (cwrite <- write '&' (my_vld '&' (my_addr '!=' addr))):
+	    (EMM_rec (tl vld_l) (tl data_l) (tl addr_l) addr cwrite din rem):[]
+    );
+    //
+    let EMM name =
+	`sAT`_input	addr.
+	`sDT`_input	din.
+	bit_input	write.
+	`sDT`_output	dout.
+	list_internal `sDLOCS` `name`EMM_vld `name`EMM_dta `name`EMM_adr.
+	let pfn = sprintf "draw_hier {EMM %s (%d)}" name `sDLOCS` in
+	CELL pfn [
+	    EMM_rec `name`EMM_vld `name`EMM_dta `name`EMM_adr
+		    addr write din dout
+    ];
+    //
+    let `name`_RAM =
+	`sAT`_input	    addr.
+	`sDT`_input	    din.
+	bit_input	    write.
+	`sDT`_output	    dout.
+	//
+	CELL "draw_hier RAM" [
+	    EMM "MEM_EMM" addr din write dout
+    ];
+    //
+    let make_`name`_ant ckt addr_data_list =
+	length addr_data_list > `sDLOCS` =>
+	    eprintf "Too many address/data pairs in mk_EMM_ant! Max `sDLOCS`" 
+	|
+	let l1 = filter (str_is_substr "`name`EMM_") (vectors ckt) then
+	length l1 != 3 => eprintf "More than one %s set of nodes" "EMM_" |
+	let pref = hd (str_split (hd l1) "EMM_") in
+	let asz = hw_size {'0::`sAT`} in
+	let dsz = hw_size {'0::`sDT`} in
+	let mk_v_vec i = {mk_var (sprintf "%sEMM_vld[%d]" pref i)::bit} in
+	let mk_a_vec i = 
+	    {mk_var (sprintf "%sEMM_adr[%d][%d:0]" pref i (asz-1))::`sAT`}
+	in
+	let mk_d_vec i =
+	    {mk_var (sprintf "%sEMM_dta[%d][%d:0]" pref i (dsz-1))::`sDT`}
+	in
+	letrec mk i ((a,d):rem) =
+	    ((mk_v_vec i) is 0x1 in_phase 0) and
+	    ((mk_a_vec i) is a in_phase 0) and
+	    ((mk_d_vec i) is d in_phase 0) and
+	    (mk (i-1) rem)
+	 /\\    mk i [] = i < 0 => [] |
+		((mk_v_vec i) is 0x0 in_phase 0) and
+	    (mk (i-1) [])
+	in
+	mk (`sDLOCS`-1) addr_data_list
+    ;
+    end_abstype `name`_RAM make_`name`_ant;
+    }> "functor"
+;
+
+
+//TYPE "addr" 16;
+TYPE "byte" 8;
+
+make_abstract_RAM "ex1" 4 "addr" "byte";
+//make_abstract_ROM "ex1" 4 "addr" "byte";
+
+let ckt = pexlif2fsm (ex1_RAM 'addr 'din 'write 'dout);
+//let ckt = pexlif2fsm (ex1_ROM 'addr 'dout);
+let vis = STE_debug ckt;
+//vis;
+
+let ant =
+	(make_ex1_ant ckt [({'0x03::addr},{'0::byte}), ('0x11, '0x1a)])
+	and
+	  "addr[4:0]" is 0x3 for 1 phase followed_by
+			  0x11 for 1 phase followed_by
+			  0 for 1 phase followed_by
+			  0x3 for 1 phase followed_by
+			  0x11 for 1 phase followed_by
+			  0 for 1 phase
+	and
+	  "din[7:0]" is "d1[7:0]" for 1 phase followed_by
+	                "d2[7:0]" for 1 phase followed_by
+	                "d3[7:0]" for 1 phase followed_by
+	                "d4[7:0]" for 1 phase
+	and
+	  "write" is 0 for 1 phase followed_by
+		     1 for 1 phase followed_by
+		     1 for 1 phase followed_by
+		     0 for 1 phase followed_by
+		     0 for 1 phase followed_by
+		     0 for 1 phase 
+;
+
+STE "-e" vis [] ant [] [];
+

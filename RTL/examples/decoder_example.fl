@@ -1,0 +1,80 @@
+cload (DIR^"../types.fl");
+
+let MAX_ALLOC = 7;
+TYPE "alloc_cnt" (bits_needed (MAX_ALLOC-1));
+
+let MAX_ARITY = 5;
+TYPE "arity_cnt" (bits_needed MAX_ARITY);
+
+let combinator_list = [
+	// Name	Args	Allocs
+	(C_I,	1,	0),
+	(C_K,	2,	0),
+	(C_S,	3,	2)
+];
+
+let primitive_list = [
+	// Name	    Args
+	(P_PLUS,    2),
+	(P_MINUS,   2),
+	(P_TIMES,   2),
+	(P_DIV,	    2),
+	(P_MOD,	    2),
+	(P_EQ,	    2),
+	(P_NEQ,	    2),
+	(P_GT,	    2),
+	(P_GEQ,	    2),
+	(P_AND,	    2),
+	(P_OR,	    2),
+	(P_NOT,	    1),
+	(P_COND,    3)
+]
+
+let decoder =
+    node_input		nd.
+    bit_output		is_comb.
+    bit_output		is_prim.
+    bit_output		is_apply.
+    bit_output		is_cons.
+    bit_output		is_nil.
+    addr_output		left.
+    addr_output		right.
+    arity_cnt_output	arity.
+    alloc_cnt_output	to_alloc.
+    //
+    arity_cnt_internal	comb_arity.
+    arity_cnt_internal	prim_arity.
+    alloc_cnt_internal	comb_to_alloc.
+    //
+    CELL "draw_hier decoder" [
+	is_comb <- is_G_COMB  (nd-->type),
+	is_prim <- is_G_PRIM  (nd-->type),
+	is_apply <- is_G_APPL (nd-->type),
+	is_cons <- is_G_CONS  (nd-->type),
+	is_nil <- is_G_NIL    (nd-->type),
+	//
+	left <- (IF is_apply THEN (nd-->laddr) ELSE 'X),
+	right <- (IF is_apply THEN (nd-->raddr) ELSE 'X),
+	//
+	CASE comb_arity
+	    (map (\(c,ar,al). (nd-->comb '=' c) --- ''ar) combinator_list) '0,
+	CASE prim_arity
+	    (map (\(p,ar). (nd-->prim '=' p) --- ''ar) primitive_list) '0,
+	CASE arity [
+	    is_comb --- comb_arity,
+	    is_prim --- prim_arity
+	] '0,
+	//
+	CASE comb_to_alloc
+	    (map (\(c,ar,al). (nd-->comb '=' c) --- ''al) combinator_list) '0,
+	to_alloc <- (IF is_comb THEN comb_to_alloc ELSE '0)
+];
+
+//let p = decoder 'nd 'is_comb 'is_prim 'is_apply 'is_cons 'is_nil 'left 'right 'arity 'to_alloc;
+//
+//let ckt = pexlif2fsm p;
+//
+//let vis = STE_debug ckt;
+//
+//vis;
+

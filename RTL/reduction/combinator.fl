@@ -1,0 +1,30 @@
+cload (DIR^"combinator_list.fl");
+
+
+let combinator_unit =
+    combinator_input	op.
+    addr_input		redex_addr.
+    addr_list_input	arg_addrs.
+    addr_list_input	alloc_addrs.
+    node_list_output	alloc_results.
+    node_output		redex_result.
+    CELL "draw_hier combinator" (
+	let assignments =
+	    flatmap (\(c,_,_,l). map (\e. c,e) l) combinator_list
+	in
+	let common_asignments = partition (\(c,l,r). l) assignments in
+	let mk1 as =
+	    val (_,lhs,_) = el 1 as in
+	    let rules = map (\(comb,lhs,rhs). (op '=' comb) --- rhs) as in
+	    CASE lhs rules '0
+	in
+	map mk1 common_asignments
+);
+
+
+//let p = combinator 'op 'raddr ['arg1, 'arg2, 'arg3] ['alloc_addr1, 'alloc_addr2]
+//		       ['al1, 'al2] 'redex;
+//let ckt = pexlif2fsm p;
+//ckt;
+//
+//STE_debug ckt;

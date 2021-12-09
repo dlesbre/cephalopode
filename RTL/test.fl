@@ -1,0 +1,99 @@
+load "types.fl";
+
+
+STRUCT "ifc_to_mem" [
+	    ("ireq",	"bit"),
+	    ("irw",	"bit"),
+	    ("iaddr",	"addr"),
+	    ("iwdata",	"node")
+];
+
+STRUCT "ifc_from_mem" [
+	    ("irdy",	"bit"),
+	    ("irdata",	"node")
+];
+
+
+let RAM =
+    bit_input		clk reset.
+    ifc_to_mem_input	ifci.
+    ifc_from_mem_output	ifco.
+    //
+    bit_internal	mem_req.
+    bit_internal	rw.
+    addr_internal	addr.
+    node_internal	write_data.
+    //
+    bit_internal	rdy.
+    node_internal	rd_data.
+    //
+    RAM_internal    ram new_ram.
+    internal	    local_rd_data tmp_new_ram lreset.
+    CELL "draw_hfl {RAM}" [
+	mem_req <- ifci-->ireq,
+	rw <- ifci-->irw,
+	addr <- ifci-->iaddr,
+	write_data <- ifci-->iwdata,
+	ifco-->irdy <- rdy,
+	ifco-->irdata <- rd_data,
+	Read_RAM ram addr local_rd_data,
+	rd_data <- (IF (mem_req '&' rw) THEN local_rd_data ELSE 'X),
+	Write_RAM ram addr write_data tmp_new_ram,
+	new_ram <- (IF (mem_req '&' '~' rw) THEN tmp_new_ram ELSE ram),
+	re_ff clk new_ram ram,
+	lreset <- reset '|' rdy,
+	delay F RAM_LATENCY clk lreset mem_req rdy
+];
+
+let tst =
+    bit_input	    clk reset.
+    addr_input	    addr.
+    bit_input	    req.
+    bit_input	    rw.
+    node_input	    din.
+    bit_output	    rdy.
+    node_output	    dout.
+    //
+    internal	    ifci ifco.
+    CELL "tst" [
+	RAM clk reset ifci ifco,
+	ifci-->ireq <- req,
+	ifci-->irw <- rw,
+	ifci-->iaddr <- addr,
+	ifci-->iwdata <- din,
+	rdy <- ifco-->irdy,
+	dout <- ifco-->irdata
+];
+
+let v = STE_debug (pexlif2fsm (tst 'clk 'reset 'addr 'req 'rw 'din 'rdy 'dout));
+
+v;
+
+let ant =
+	"clk" is_clock 11 and
+	"reset" isv "0x1" from 0 to 2 and
+	"reset" isv "0x0" from 2 to 20 and
+	//
+	"req" isv' {'0x0::bit} from 0 to 2 and
+	"req" isv' {'0x1::bit} from 2 to 4 and
+	"req" isv' {'0x0::bit} from 4 to 8 and
+	"req" isv' {'0x1::bit} from 8 to 10 and
+	"req" isv' {'0x0::bit} from 10 to 20 and
+	//
+	"rw" isv' {'0x0::bit} from 2 to 4 and
+	"rw" isv' {'0x1::bit} from 8 to 10 and
+	//
+	"addr[4:0]" isv' {'0x1f::addr} from 2 to 4 and
+	"addr[4:0]" isv' {'0x1f::addr} from 8 to 10 and
+	//
+	"din[18:0]" isv' {'d::node} from 2 to 4
+;
+
+STE "-e" v [] ant [] [];
+
+// clk
+// reset 
+// req
+// rw
+// rdy
+// dout

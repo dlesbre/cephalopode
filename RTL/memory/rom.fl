@@ -1,0 +1,52 @@
+cload (DIR^"../types.fl");
+
+let ROM name =
+    addr_input	addr.
+    node_output	out.
+    //
+    bit_internal    rdy.
+    internal	    local_out.
+    let  rom =  mk_internal (sprintf "__ROM__%s__" name) in
+    add_internal {rom::ROM} (
+    CELL "draw_hier ROM" [
+	is_stable ROM_LATENCY addr rdy,
+	Read_ROM rom addr local_out,
+	out <- (IF rdy THEN local_out ELSE 'X),
+	rom <: rom
+]);
+
+//STE_debug (pexlif2fsm (ROM "abc" 'addr 'out));
+
+let convert_line_to_node line =
+    let s2bit c = c = "0" => {'0::bit} |
+		  c = "1" => {'1::bit} |
+		  eprintf "Illegal syntax in ROM file (%s)" c
+    in
+    {frombits (map s2bit (butlast (explode line))):: node}
+;
+
+clet mk_ROM_ant ckt name file =
+    let fp = fopen file "r" then
+    (
+	let vecs = vectors ckt in
+	let pat =  sprintf "__ROM__%s__" name in
+        let candidates = filter (str_is_substr pat) vecs in
+        candidates = [] => eprintf "Cannot find ROM named %s" name |
+        length candidates != 1 =>
+            eprintf "ROM name %s is not unique. Matches %S" name candidates
+	|
+	let rom_cells = md_expand_vectors candidates in
+	letrec rd {addr::int} =
+	    let line = fgets fp then
+	    line == "" => [] |
+	    let v = convert_line_to_node line then
+	    (wexpr2bool [] (hw_destr v)):(rd (addr+1))
+	in
+	let vals = flat (rev (rd 0)) then
+	let relevant_cells = lastn (length vals) rom_cells in
+	let res = map2 (\c.\v. (T,c,v,0,1)) relevant_cells vals then
+	(fclose fp) fseq
+	res
+    ) gen_catch (\msg.  (fclose fp) fseq  error msg)
+;
+

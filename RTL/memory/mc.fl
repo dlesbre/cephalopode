@@ -1,0 +1,320 @@
+//set_font font_largest;
+cload (DIR^"../types.fl");
+cload (DIR^"initiator.fl");
+cload (DIR^"ram_ctrl.fl");
+cload (DIR^"allocator.fl");
+cload (DIR^"marker.fl");
+cload (DIR^"snapshot.fl");
+
+ENUM "mc_state" ["GC_INITIATION", "GC_IDLE", "GC_SNAP", "GC_MARK", "GC_SWEEP"];
+
+ENUM "indir_fsm" ["IDLE", "WR", "RD", "FINISH", "IRD"];
+
+let mc = 
+    //
+    // Global signals
+    //
+    bit_input	clk reset.
+    cr_inout	cr.
+    bit_output	ready.
+    addr_output entry_point.
+    //
+    // Interface to execution engine
+    //
+    bit_input	allocate_req.
+    bit_output	allocate_ack.
+    addr_output	allocate_addr.
+    //
+    bit_input	rw_req.
+    bit_input	rw.
+    addr_input	rw_addr.
+    bit_output	rw_ack.
+    node_input	write_data.
+    node_output	read_data.
+    //
+    // RAM interface
+    //
+    eaddr_output    ram_addr.
+    bit_output	    ram_rw.
+    node_input      ram_data_from_mem.
+    node_output     ram_data_to_mem.
+    //
+    // ROM interface
+    //
+    addr_output     rom_addr.
+    node_input      rom_data_from_mem.
+    //
+    // Internal signals
+    //
+    node_internal	g_rdata.
+    mc_state_internal	mc_state.
+    bit_internal   need_gc mark_done snap sweep.
+    cr_internal	   cr_i cr_r.
+    bit_internal   done_initiation.
+    bit_internal   do_snap.
+    bit_internal   do_sweep.
+    bit_internal   doing_initiation.
+    eaddr_internal i_ram_addr.
+    eaddr_internal n_ram_addr.
+    bit_internal   i_ram_rw.
+    bit_internal   n_ram_rw.
+    node_internal  i_ram_wdata.
+    node_internal  n_ram_wdata.
+    node_internal  ram_wdata.
+    bit_internal   alloc_req.
+    bit_internal   n_alloc_req.
+    bit_internal   i_alloc_req.
+    bit_internal   mark_req.
+    addr_internal  mark_addr.
+    bit_internal   already_marked.
+    bit_internal   do_mark.
+    bit_internal   want_snapshot.
+    bit_internal   do_snapshot_op.
+    bit_internal   is_gc_cycle.
+    bit_internal   nd_valid.
+    addr_internal  raw_addr.
+    eaddr_internal free_cnt.
+    bit_internal   is_indir.
+    indir_fsm_internal	istate.
+    bit_internal    m_rw_req m_rw_ack.
+    addr_internal   m_rw_addr.
+    //
+    CELL "draw_hier mc" [
+	need_gc <- (free_cnt '<' (''(NODES/4))),
+	//
+	(Moore_FSM "GC_FSM" clk mc_state
+	    (reset, GC_INITIATION)
+	    [
+		GC_INITIATION --- done_initiation --- GC_IDLE,
+		GC_IDLE	      --- need_gc	  --- GC_SNAP,
+		GC_SNAP	      --- default	  --- GC_MARK,
+		GC_MARK	      --- mark_done	  --- GC_SWEEP,
+		GC_SWEEP      --- default	  --- GC_IDLE
+	    ]
+	),
+	ready <- '~' (is_GC_INITIATION mc_state),
+	do_snap <- is_GC_SNAP mc_state,
+	do_sweep <- is_GC_SWEEP mc_state,
+	doing_initiation <- is_GC_INITIATION mc_state,
+	//
+	MUX doing_initiation i_ram_addr n_ram_addr ram_addr,
+	MUX doing_initiation i_ram_rw n_ram_rw ram_rw,
+	MUX doing_initiation i_ram_wdata n_ram_wdata ram_data_to_mem,
+	MUX doing_initiation i_alloc_req n_alloc_req alloc_req,
+	n_alloc_req <- allocate_req,
+//	CR_connect [cr_i, cr_r] cr,
+	CR_connect2 cr_i cr_r cr,
+	Initiator clk reset cr_i
+		  rom_addr rom_data_from_mem
+		  i_ram_addr i_ram_rw i_ram_wdata
+	          i_alloc_req
+		  done_initiation entry_point,
+	//
+	//
+	allocator clk reset
+		  do_snap do_sweep
+		  mark_req mark_addr
+		  alloc_req allocate_addr allocate_ack already_marked
+		  free_cnt,
+	// ==================
+	do_mark <- need_gc,
+	//
+	do_snapshot_op <- '~' n_ram_rw,
+	want_snapshot <- '~' is_gc_cycle,
+	snapshot_mgr clk reset want_snapshot do_snap do_sweep
+		     do_snapshot_op rw raw_addr n_ram_addr,
+	//
+	marker clk reset entry_point do_mark mark_done
+		    mark_req mark_addr nd_valid already_marked g_rdata,
+	//
+	ram_controller clk reset cr_r
+		       m_rw_req rw m_rw_addr write_data m_rw_ack read_data
+		       mark_req mark_addr nd_valid g_rdata
+		       raw_addr n_ram_rw ram_data_from_mem n_ram_wdata
+		       is_gc_cycle,
+	//
+	is_indir <- (read_data-->type '=' G_INDIR),
+	(Moore_FSM "indir_fsm" clk istate
+	    (reset, IDLE)
+	    [
+		IDLE	    --- rw_req '&' rw		    --- RD,
+		IDLE	    --- rw_req '&' '~' rw	    --- WR,
+		RD	    --- m_rw_ack '&' is_indir	    --- IRD,
+		RD	    --- m_rw_ack '&' '~' is_indir   --- FINISH,
+		WR	    --- m_rw_ack		    --- FINISH,
+		FINISH	    --- '~' rw_req		    --- IDLE,
+		IRD	    --- '~' m_rw_ack		    --- RD
+	    ]
+	),
+	m_rw_req <- is_IDLE istate '&' rw_req '|'
+		    is_RD istate '|' is_WR istate,
+	rw_ack <- is_RD istate '&' m_rw_ack '&' '~' is_indir '|'
+		  is_FINISH istate,
+	STATE clk m_rw_addr [
+	    is_IDLE istate --- rw_addr,
+	    is_RD istate '&' m_rw_ack '&' is_indir --- ram_data_from_mem-->laddr
+	]
+];
+
+ENUM "merge_fsm" ["IDLE", "R_ACTIVE", "A_ACTIVE"];
+
+let merge_execution_ifc =
+    bit_input	clk reset.
+    //
+    // Interface to reduction engine
+    //
+    bit_input	r_allocate_req.
+    bit_output	r_allocate_ack.
+    addr_output	r_allocate_addr.
+    bit_input	r_rw_req.
+    bit_input	r_rw.
+    addr_input	r_rw_addr.
+    bit_output	r_rw_ack.
+    node_input	r_write_data.
+    node_output	r_read_data.
+    //
+    // Interface to arithmetic engine
+    //
+    bit_input	a_allocate_req.
+    bit_output	a_allocate_ack.
+    addr_output	a_allocate_addr.
+    bit_input	a_rw_req.
+    bit_input	a_rw.
+    addr_input	a_rw_addr.
+    bit_output	a_rw_ack.
+    node_input	a_write_data.
+    node_output	a_read_data.
+    //
+    // Interface to mc
+    //
+    bit_output	allocate_req.
+    bit_input	allocate_ack.
+    addr_input	allocate_addr.
+    bit_output	rw_req.
+    bit_output	rw.
+    addr_output	rw_addr.
+    bit_input	rw_ack.
+    node_output	write_data.
+    node_input	read_data.
+    merge_fsm_internal	state.
+    bit_internal	is_A_rw.
+    bit_internal	is_R_rw.
+    CELL "draw_hier ifc_merge" [
+    (Moore_FSM "merge_fsm" clk state
+	    (reset, IDLE)
+	    [
+		IDLE	 --- r_allocate_req --- R_ACTIVE,
+		IDLE	 --- r_rw_req	    --- R_ACTIVE,
+		IDLE	 --- a_allocate_req --- A_ACTIVE,
+		IDLE	 --- a_rw_req	    --- A_ACTIVE,
+		A_ACTIVE --- allocate_ack   --- IDLE,
+		A_ACTIVE --- rw_ack	    --- IDLE,
+		R_ACTIVE --- allocate_ack   --- IDLE,
+		R_ACTIVE --- rw_ack	    --- IDLE
+	    ]
+    ),
+    allocate_req <- a_allocate_req '|' r_allocate_req,
+    a_allocate_ack <- is_A_ACTIVE state '&' allocate_ack,
+    r_allocate_ack <- is_R_ACTIVE state '&' allocate_ack,
+    a_allocate_addr <- allocate_addr,
+    r_allocate_addr <- allocate_addr,
+    rw_req <- a_rw_req '|' r_rw_req,
+    is_A_rw <- a_rw_req '|' is_A_ACTIVE state,
+    is_R_rw <- r_rw_req '|' is_R_ACTIVE state,
+    CASE rw [
+	is_A_rw --- a_rw,
+	is_R_rw --- r_rw ] '1,
+    CASE rw_addr [
+	is_A_rw --- a_rw_addr,
+	is_R_rw --- r_rw_addr ] '0,
+    a_rw_ack <- is_A_ACTIVE state '&' rw_ack,
+    r_rw_ack <- is_R_ACTIVE state '&' rw_ack,
+    CASE write_data [
+	is_A_rw --- a_write_data,
+	is_R_rw --- r_write_data ] '0,
+    a_read_data <- read_data,
+    r_read_data <- read_data
+];
+
+let MEM_CTRL =
+    //
+    // Global signals
+    //
+    bit_input	clk reset.
+    cr_inout	cr.
+    bit_output	ready.
+    addr_output entry_point.
+    //
+    // Interface to reduction engine
+    //
+    bit_input	r_allocate_req.
+    bit_output	r_allocate_ack.
+    addr_output	r_allocate_addr.
+    bit_input	r_rw_req.
+    bit_input	r_rw.
+    addr_input	r_rw_addr.
+    bit_output	r_rw_ack.
+    node_input	r_write_data.
+    node_output	r_read_data.
+    //
+    // Interface to arithmetic engine
+    //
+    bit_input	a_allocate_req.
+    bit_output	a_allocate_ack.
+    addr_output	a_allocate_addr.
+    bit_input	a_rw_req.
+    bit_input	a_rw.
+    addr_input	a_rw_addr.
+    bit_output	a_rw_ack.
+    node_input	a_write_data.
+    node_output	a_read_data.
+    //
+    // RAM interface
+    //
+    eaddr_output    ram_addr.
+    bit_output	    ram_rw.
+    node_input      ram_data_from_mem.
+    node_output     ram_data_to_mem.
+    //
+    // ROM interface
+    //
+    addr_output     rom_addr.
+    node_input      rom_data_from_mem.
+    //
+    // Internal signals
+    //
+    bit_internal	allocate_req.
+    bit_internal	allocate_ack.
+    addr_internal	allocate_addr.
+    bit_internal	rw_req.
+    bit_internal	rw.
+    addr_internal	rw_addr.
+    bit_internal	rw_ack.
+    node_internal	write_data.
+    node_internal	read_data.
+    CELL "draw_hier MEM_CTRL" [
+	merge_execution_ifc clk reset
+		r_allocate_req r_allocate_ack r_allocate_addr
+		r_rw_req r_rw r_rw_addr r_rw_ack r_write_data r_read_data
+		a_allocate_req a_allocate_ack a_allocate_addr
+		a_rw_req a_rw a_rw_addr a_rw_ack a_write_data a_read_data
+		allocate_req allocate_ack allocate_addr
+		rw_req rw rw_addr rw_ack write_data read_data,
+	mc clk reset cr ready entry_point
+		allocate_req allocate_ack allocate_addr
+		rw_req rw rw_addr rw_ack write_data read_data
+		ram_addr ram_rw ram_data_from_mem ram_data_to_mem
+		rom_addr rom_data_from_mem
+];
+
+
+//let p = MEM_CTRL 'clk 'reset 'cr 'ready 'entry_point
+//	    'r_allocate_req 'r_allocate_ack 'r_allocate_addr
+//	    'r_rw_req 'r_rw 'r_rw_addr 'r_rw_ack 'r_write_data 'r_read_data
+//	    'a_allocate_req 'a_allocate_ack 'a_allocate_addr
+//	    'a_rw_req 'a_rw 'a_rw_addr 'a_rw_ack 'a_write_data 'a_read_data
+//	    'ram_addr 'ram_rw 'ram_data_from_mem 'ram_data_to_mem
+//	    'rom_addr 'rom_data_from_mem;
+//
+//let v = STE_debug (pexlif2fsm p);
+//v;

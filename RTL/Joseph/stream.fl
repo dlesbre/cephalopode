@@ -1,0 +1,116 @@
+
+lettype state =
+		      IDLE {cnt::int}
+		    | ADVERTIZE
+		    | CONNECTED
+;
+
+
+//1:2:3:[];
+
+//letrec length l = l = [] => 0 | 1 + length (tl l);
+//length (1:2:3:[]);
+
+//letrec length (h:remaining) = 1 + length remaining
+// /\    length [] = 0
+//;
+
+//length (1:2:3:[]);
+
+let NBR_ADV_STREAMS = 3;
+let NBR_DTA_STREAMS = 37;
+let QUIET_CNT = 7;
+
+lettype stream = STREAMS (string list);
+let Pstream (STREAMS sl) = sprintf "STREAM %S\n" sl;
+install_print_function Pstream;
+
+let send_on_adv_channel chid data =
+    NOT (0 < chid AND chid <= NBR_ADV_STREAMS) =>
+	eprintf "send_on_adv_channel with illegal chid (%d)" chid
+    |
+    letrec mk i = 
+	i > NBR_ADV_STREAMS => [] |
+	(i != chid => "0" | data):(mk (i+1)) 
+    in
+    STREAMS (mk 1)
+;
+
+let idle = STREAMS (replicate NBR_ADV_STREAMS "0");
+
+let read_on_adv_channel chid (STREAMS sl) =
+(fprintf stderr "read_on_adv_channel %d %S\n" chid sl) fseq
+    NOT (0 < chid AND chid <= NBR_ADV_STREAMS) =>
+	eprintf "read_on_adv_channel with illegal chid (%d)" chid
+    |
+    length sl < chid =>
+	eprintf "read_on_adv_channel with chid not in range |sl|=%d\n" (length sl)
+    |
+    el chid sl
+;
+
+
+let skip_adv_channel cur_ch =
+    let new_ch = cur_ch + 1 in
+    new_ch > NBR_ADV_STREAMS => 1 | new_ch
+;
+
+
+letrec ceph_tranf _ _ [] = (fprintf stdout "Ran out of instream\n") seq []
+//
+ /\ ceph_tranf (IDLE cur_cnt) cur_adv_ch instream =
+    let cur_val = read_on_adv_channel cur_adv_ch (hd instream) in
+    (cur_val = "0") =>
+	(cur_cnt = 0) =>
+	    (send_on_adv_channel cur_adv_ch "adv"):
+	    (ceph_tranf ADVERTIZE cur_adv_ch (tl instream))
+	|
+	    idle:
+	    (ceph_tranf (IDLE (cur_cnt-1)) cur_adv_ch (tl instream))
+    |
+    idle :
+    (ceph_tranf (IDLE QUIET_CNT) (skip_adv_channel cur_adv_ch) (tl instream)) 
+//
+ /\   ceph_tranf ADVERTIZE cur_adv_ch instream =
+    [idle]
+;
+
+
+let i_stream_1 = [
+		    send_on_adv_channel 1 "0", 
+		    send_on_adv_channel 1 "0", 
+		    send_on_adv_channel 1 "0", 
+		    send_on_adv_channel 1 "0", 
+		    send_on_adv_channel 1 "0", 
+		    send_on_adv_channel 1 "0", 
+		    send_on_adv_channel 1 "0", 
+		    send_on_adv_channel 1 "0", 
+		    send_on_adv_channel 1 "0"
+];
+
+ceph_tranf (IDLE QUIET_CNT) 1 i_stream_1;
+
+let i_stream_2 = [
+		    send_on_adv_channel 1 "0", 
+		    send_on_adv_channel 1 "9", 
+		    send_on_adv_channel 1 "0", 
+		    send_on_adv_channel 1 "0", 
+		    send_on_adv_channel 1 "0", 
+		    send_on_adv_channel 1 "0", 
+		    send_on_adv_channel 1 "0", 
+		    send_on_adv_channel 1 "0", 
+		    send_on_adv_channel 1 "0"
+];
+
+ceph_tranf (IDLE QUIET_CNT) 1 i_stream_2;
+
+
+
+
+
+	"r":(ceph_tranf ADVERTIZE rem_inp)
+ /\    ceph_tranf IDLE (_ : rem_inp) =
+	"0":(ceph_tranf IDLE rem_inp)
+ /\    ceph_tranf ADVERTIZE ("0":rem_inp) =
+	
+    

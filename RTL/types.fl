@@ -1,0 +1,321 @@
+cload "ste.fl";
+
+
+//let NODES = 2**20;
+//let INT_SZ  = 32;
+//let NODES = 2**8;
+//let NODES = 2**6;
+let NODES = 2**9;
+let INT_SZ  = 63;
+
+let ADDR_SZ = bits_needed (NODES-1);
+
+//let STACK_DEPTH = 1000;
+let STACK_DEPTH = min 300 (NODES-1);
+
+let NBR_INPUTS  = 8;
+let NBR_OUTPUTS = 8;
+
+TYPE "ext_inps" NBR_INPUTS;
+TYPE "ext_outs" NBR_OUTPUTS;
+
+//let SCHEDULER_SIZE = 16;
+let SCHEDULER_SIZE = 4;
+let SCHEDULER_ADDR_SZ = bits_needed (SCHEDULER_SIZE-1);
+
+TYPE "sch_addr" SCHEDULER_ADDR_SZ;
+TYPE "e_sch_addr" (SCHEDULER_ADDR_SZ+1);
+
+
+// DEFINITION OF TYPES
+
+// TYPE -- addr and eaddr -- Address and Extended Address
+TYPE "addr" ADDR_SZ;
+let addr_zero = {'0::addr};
+let addr_end = addr_zero; // Address that tells the end of an Int
+
+TYPE "eaddr" (ADDR_SZ+1);
+let eaddr_zero = {'0::eaddr};
+
+let eaddr2addr {e::eaddr} = {e~~~((ADDR_SZ-1)--0)::addr};
+let addr2eaddr {b::bit} {e::addr} = {frombits (b:(tobits e)) :: eaddr};
+
+lettype sign = ANY | UNSIGNED | SIGNED;
+
+
+// Check a value is in a given range
+//   <msg (str)> name to print if check fails
+//   <sign_type> ANY, UNSIGNED or SIGNED (determines) range min/max values
+//   <bits> number of bits used to represent the value
+//   <i (int)> number to check
+let check_range msg sign_type bits i =
+    let low_limit = (sign_type = UNSIGNED) => 0 | -1*(2**(bits-1)) in
+    let high_limit = (sign_type = SIGNED) => 2**(bits-1)-1 | 2**bits-1 in
+    i < low_limit =>
+	eprintf "Range check failed for %s (too small): %d < %d" msg i low_limit
+    |
+    i > high_limit =>
+	eprintf "Range check failed for %s (too large): %d > %d" msg i high_limit
+    |
+    ()
+;
+
+let mk_addr addr =
+    (check_range "mk_addr" UNSIGNED ADDR_SZ addr) fseq
+    { ''addr :: addr };
+
+let mk_eaddr addr =
+    (check_range "mk_eaddr" UNSIGNED (ADDR_SZ+1) addr) fseq
+    { ''addr :: eaddr };
+
+// TYPE -- Int -- Integer
+TYPE "simple_Int" INT_SZ;
+
+STRUCT "Int" INT_SZ [
+    ("simple_Int", "simple_Int", (INT_SZ-1 -- 0)),
+    ("msb",        "bit",        [INT_SZ-1]),
+    ("lsb",        "bit",        [0])
+];
+
+let Int_zero    = {'0::Int};
+let Int_one     = {'1::Int};
+
+// mk Int from signed input
+let mk_Int n =
+    (check_range "mk_Int" SIGNED INT_SZ n) fseq
+    {''n :: Int};
+// mk Int from unsigned input (for intermediate chunks)
+let mk_uInt n =
+    (check_range "mk_uInt" UNSIGNED INT_SZ n) fseq
+    {''n :: Int};
+// mk Int from signed or unsigned input
+let mk_aInt n =
+    (check_range "mk_uInt" ANY INT_SZ n) fseq
+    {''n :: Int};
+
+
+let Int_neg_one = mk_Int (-1);
+
+let Mk_Int_list n =
+    let es = explode (sprintf "%b" n) in
+    let rem = length es % INT_SZ in
+    let add = rem = 0 => 0 | INT_SZ-rem in
+    let chunks = cluster INT_SZ ((replicate add "0")@es) in
+    let mk l = {''(sscanf "%b" (implode l))::Int} in
+    rev (map mk chunks)
+;
+
+// TYPE -- g_type -- Node type
+// @, combinator, primitive, indirection, integer, constant and nil
+ENUM "g_type" ["G_APPL", "G_COMB", "G_PRIM", "G_INDIR",
+	       "G_INT",
+	       "G_CONS", "G_NIL"];
+let G_TYPE_SZ = get_hw_type_size "g_type";
+
+// TYPE -- combinator -- SK combinator
+// S, K and I
+ENUM "combinator" ["C_S", "C_K", "C_I", "C_Y", "C_SPRIME", "C_C", "C_CPRIME",
+		   "C_B", "C_BSTAR", "C_BPRIME",
+		   // Strictness combinators...
+		   "C_S1", "C_S2" ];
+let COMBINATOR_SZ = get_hw_type_size "combinator";
+
+// TYPE -- prims -- Primitive
+// +, -, *, /, %, =, !=, >, >=, &, |, ~ or IF THEN ELSE
+ENUM "prims" [
+	    "P_PLUS", "P_MINUS", "P_TIMES", "P_DIVMOD",
+	    "P_EQ", "P_NEQ", "P_GT", "P_GEQ",
+	    "P_AND", "P_OR", "P_NOT",
+	    "P_COND",
+	    "P_PROC_INIT"
+];
+let PRIMS_SZ = get_hw_type_size "prims";
+
+
+
+// Building the node type
+let make_range top_range sz =
+	let next = (itlist max top_range (-1))+1 in
+	let next' = next+sz in
+	let range = (next+sz-1) downto next in
+	range
+;
+
+let g_type_range     = make_range [] G_TYPE_SZ;
+let combinator_range = make_range g_type_range COMBINATOR_SZ;
+let prims_range	     = make_range g_type_range PRIMS_SZ;
+let laddr_range	     = make_range g_type_range ADDR_SZ;
+let raddr_range	     = make_range laddr_range ADDR_SZ;
+let int_range	     = make_range laddr_range INT_SZ;
+
+let tot_bits_needed =
+    let ranges = raddr_range@
+		 laddr_range@
+		 int_range@
+		 g_type_range@
+		 prims_range in
+    1+(itlist max ranges 0)
+;
+
+//tot_bits_needed;
+
+let NODE_SZ = tot_bits_needed;
+// the name tot_bits_needed may be used elsewhere so I prefer to declare NODE_SZ
+
+STRUCT "node" tot_bits_needed [
+		// Initial flash word
+		("end_addr",	"eaddr",	(ADDR_SZ--0)),
+		("entry_addr",  "addr",		((2*ADDR_SZ)--(ADDR_SZ+1))),
+		// Regular use
+		("type",	"g_type",	g_type_range),
+		("comb",	"combinator",	combinator_range),
+		("prim",	"prims",	prims_range),
+		("int",		"Int",		int_range),
+		("laddr",	"addr",		laddr_range),
+		("raddr",	"addr",		raddr_range)
+];
+
+
+let Pnode {i::int} =
+    let nd = {''i :: node} in
+    let C n = wexpr2bool [] (hw_destr n) in
+    let tp = C (nd-->type) in
+      tp = (C G_APPL) =>
+	let l = nd-->laddr in
+	let r = nd-->raddr in
+	sprintf "APPL %s %s" (P_addr l) (P_addr r)
+    | tp = (C G_COMB) =>
+	let Cc n = wexpr2bool [] (hw_destr n) in
+	let c = Cc (nd-->comb) in
+	c = (Cc C_S) => "C_S" |
+	c = (Cc C_K) => "C_K" |
+	c = (Cc C_I) => "C_I" |
+	c = (Cc C_Y) => "C_Y" |
+	c = (Cc C_SPRIME) => "C_SPRIME" |
+	c = (Cc C_C) => "C_C" |
+	c = (Cc C_CPRIME) => "C_CPRIME" |
+	c = (Cc C_B) => "C_B" |
+	c = (Cc C_BSTAR) => "C_BSTAR" |
+	c = (Cc C_BPRIME) => "C_BPRIME" |
+	eprintf "Illegal combinator node (%s)" (P_combinator (nd-->comb))
+    | tp = (C G_PRIM) =>
+	let Cp n = wexpr2bool [] (hw_destr n) in
+	let p = Cp (nd-->prim) in
+        p = (Cp P_PLUS) => "Prim_PLUS" |
+        p = (Cp P_MINUS) => "Prim_MINUS" |
+        p = (Cp P_TIMES) => "Prim_TIMES" |
+        p = (Cp P_DIVMOD) => "Prim_DIVMOD" |
+        p = (Cp P_EQ) => "Prim_EQ" |
+        p = (Cp P_NEQ) => "Prim_NEQ" |
+        p = (Cp P_GT) => "Prim_GT" |
+        p = (Cp P_GEQ) => "Prim_GEQ" |
+        p = (Cp P_AND) => "Prim_AND" |
+        p = (Cp P_OR) => "Prim_OR" |
+        p = (Cp P_NOT) => "Prim_NOT" |
+        p = (Cp P_COND) => "Prim_COND" |
+        p = (Cp P_PROC_INIT) => "P_PROC_INIT" |
+	eprintf "Illegal primitive function node (%s)" (P_prims (nd-->prim))
+    | tp = (C G_INDIR) =>
+	let l = nd-->laddr in
+	sprintf "INDIR %s" (P_addr l)
+    | tp = (C G_INT) =>
+	let i = nd-->int in
+	let l = nd-->laddr in
+	sprintf "Int %s %s" (P_Int i) (P_addr l)
+    | tp = (C G_CONS) =>
+	let l = nd-->laddr in
+	let r = nd-->raddr in
+	sprintf "CONS %s %s" (P_addr l) (P_addr r)
+    | tp = (C G_NIL) =>
+	"NIL"
+    | eprintf "Illegal node type (%s)" (P_g_type (nd-->type))
+;
+
+
+
+
+
+let mk_const name {v :: *a} =
+    let w = hw_destr v in
+    let sz = hw_size v in
+    let bv = wexpr2bool [] w in
+    depends bv != [] => eprintf "mk_const for %s not a constant." name |
+    let i = bl2int bv in
+    let w' = W_NAMED_CONST name sz i in
+    {hw_constr w' :: *a}
+;
+
+let node_Int_zero = mk_const "Zero" (
+    '0<--type ? G_INT
+      <--laddr ? addr_end
+);
+
+let mk_node_Int n addr = mk_const (sprintf "Int(%d)->%d" n addr) (
+    node_Int_zero<--int ? (mk_Int n)
+                 <--laddr ? mk_addr addr
+                 <--type ? G_INT
+);
+let mk_node_uInt n addr = mk_const (sprintf "Int(%d)->%d" n addr) (
+    node_Int_zero<--int ? (mk_uInt n)
+                 <--laddr ? mk_addr addr
+                 <--type ? G_INT
+);
+
+let mk_node_Int_simple n =
+    mk_node_Int n 0
+;
+
+
+let node_Int_false = mk_const "false" (node_Int_zero);
+
+let node_Int_true  = mk_const "true"  (
+    node_Int_zero<--int ? Int_neg_one
+);
+
+
+// Standard FSMs
+
+// RWW: Ready Wait Work
+// States used for background operations
+// Example: alloc
+//      Starts in WAIT mode. When you can alloc, go to WORK mode. When alloc is
+//      done, go to READY mode. When the caller asks for an address, give it to
+//      it and go to WAIT mode
+
+ENUM "rww" [
+    "READY", "WAIT", "WORK"
+];
+
+// MEMORY and GARBAGE COLLECTING
+ENUM "gc_stage"	["IDLE", "INIT_MARK", "MARK", "SWEEP", "ACQUIRE", "SWITCH"];
+
+
+// -----------------------------------------------------------------------
+// Memory types
+// -----------------------------------------------------------------------
+let RAM_LATENCY = 2;  // Phases of latency for memory access
+let RAM_WIDTH = get_hw_type_size "node";
+let RAM_LINES = NODES;
+MEMORY "RAM" [(RAM_LINES, "eaddr")] "node";
+
+let ROM_LATENCY = 2;	// Phases of latency for memory access
+let ROM_WIDTH = get_hw_type_size "node";
+let ROM_LINES = NODES;	// For ease of debugging
+MEMORY "ROM" [(ROM_LINES, "addr")] "node";
+
+
+// -----------------------------------------------------------------------
+// Control register types
+// -----------------------------------------------------------------------
+TYPE "rom_d"    8;  // Latency in phases to read ROM
+TYPE "ram_d"    8;  // Latency in phases to read/write RAM
+
+// Useful function for delay computations.
+let compute_extra_delay =
+    input     del.
+    output    extra_delay.
+    internal  raw.
+    CELL "draw_hier ram_delay_comp" [
+        raw <- (del '+' '1) '/' '2,
+        extra_delay <- (IF (raw '<' '1) THEN '0 ELSE raw)
+];

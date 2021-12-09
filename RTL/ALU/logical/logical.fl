@@ -1,0 +1,132 @@
+cload (DIR^"../../types.fl");
+cload (DIR^"../../io/io-protocol.fl");
+
+ENUM "logical_prims" ["LP_AND", "LP_OR", "LP_NOT", "LP_COND"];
+
+let bit2bool_node {b::bit} =
+    node_Int_false<--int ? (Int_zero<--lsb ? b)
+;
+
+let truth_value =
+    node_input  boolean_node.
+    bit_output  is_true.
+    CELL "draw_hier is_true" [
+        is_true <- '~' (boolean_node '=' node_Int_false)
+    ]
+;
+
+let p_tv = truth_value 'boolean_node 'is_true;
+
+let ckt_tv = pexlif2fsm p_tv;
+
+
+let AND_OR_unit =
+    bit_input   is_and.
+    bit_input   A.
+    node_input  indirB.
+    node_output node_out.
+    // Internal
+    CELL "draw_hier AND_OR" [
+        node_out <- (
+            IF (A '^' is_and) THEN
+                bit2bool_node A
+            ELSE
+                indirB
+        )
+    ]
+;
+
+let p_AO = AND_OR_unit 'is_and 'A 'indirB 'node_out;
+
+let ckt_AO = pexlif2fsm p_AO;
+
+
+let logical_unit =
+    bit_input   clk.
+    // PRIMITIVE UNIT INTERFACE
+    bit_input           do_op.
+    logical_prims_input op_type.
+    addr_input          a_src_addr.
+    addr_input          b_src_addr.
+    addr_input          c_src_addr.
+    bit_output          did_op.
+    node_output         node_out.
+    // MEMORY INTERFACE
+    signal_input    sig_in.
+    signal_output   sig_out.
+    // Internal wires
+    rw_data_internal    read_in read_out.
+    bit_internal        A.
+    node_internal       andor_output indirB indirC.
+    //
+    CELL "draw_hier logical_unit" [
+        // Preparing indirection nodes
+        indirB <- '0<--type  ? G_INDIR
+                    <--laddr ? (b_src_addr),
+        indirC <- indirB<--laddr ? (c_src_addr),
+        // Reading the result
+        read_in <- '0<--start ? do_op
+                     <--ack   ? (sig_in-->read)
+                     <--data  ? (sig_in-->node),
+        read_protocol "A" clk read_in read_out,
+        sig_out <- '0<--read ? (read_out-->req)
+                     <--addr ? (a_src_addr),
+        // Getting the result
+        truth_value (read_out-->data) A,
+        CASE node_out [
+            is_LP_NOT    op_type --- (bit2bool_node ('~' A)),
+            is_LP_COND   op_type --- (IF A THEN (indirB) ELSE (indirC))
+        ] andor_output,
+        AND_OR_unit (is_LP_AND op_type) A indirB andor_output,
+        did_op <- (read_out-->done)
+    ]
+;
+
+let p = logical_unit 'clk 'do_op 'op_type 'a_src_addr 'b_src_addr 'c_src_addr 'did_op 'node_out 'sig_in 'sig_out;
+
+let ckt = pexlif2fsm p;
+
+
+let v = STE_debug ckt;
+
+// TESTING
+//
+//let mk_op_type {lp::logical_prims} =
+//    let bl = wexpr2bool [] (hw_destr lp) then
+//    bl
+//;
+//
+//let mk_op a b c =
+//    let op = '0<--srcA ? a
+//               <--srcB ? b
+//               <--srcC ? c
+//    then
+//    let bl = wexpr2bool [] (hw_destr op) then
+//    bl
+//;
+//
+//let mk_sig al r w n ad =
+//    let sig = '0<--alloc ? al
+//                <--read  ? r
+//                <--write ? w
+//                <--node  ? n
+//                <--addr  ? ad
+//    then
+//    let bl = wexpr2bool [] (hw_destr sig) then
+//    bl
+//;
+//
+//let ant =
+//    "clk"           is_clock 50 and
+//    "do_op"         is "0" in_cycle 0 otherwise "1" until 50 cycles and
+//    "op_type[1:0]"  is [F,F] in_cycle 0 otherwise
+//                       (mk_op_type LP_AND) until 50 cycles and
+//    "op_in[14:0]"   is (mk_op '0 '0 '0) in_cycle 0 otherwise
+//                       (mk_op '1 '2 '3) until 50 cycles and
+//    "sig_in[20:0]"  is (mk_sig '0 '0 '0 '0 '0) in_cycle 0 followed_by
+//                       (mk_sig '0 '1 '0 (node_Int_false) '0) for 7 cycles otherwise
+//                       (mk_sig '0 '0 '0 '0 '0) until 50 cycles
+//;
+//
+//STE "-e" v [] ant [] [];
+//

@@ -1,0 +1,8 @@
+cload "ste.fl";
+cload (DIR^"../types.fl");
+
+let MAX_ARITY = 2**3 - 1;
+TYPE "arg_cnt" (bits_needed MAX_ARITY);
+
+let MAX_ALLOCS = 2**3 - 1;
+TYPE "alloc_cnt" (bits_needed MAX_ALLOCS);

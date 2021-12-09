@@ -1,0 +1,184 @@
+// IO protocols: Read/Write/Alloc
+// Four-phase handshake
+// Output address not managed here
+
+load "ste.fl",
+cload (DIR^"../types.fl");
+
+// SIGNALS:
+// Each bit is either read or ack (whether it is input or output)
+// node and addr are either input or output
+STRUCT "signal" [
+    ("alloc", "bit"),
+    ("read",  "bit"),
+    ("write", "bit"),
+    ("node",  "node"),
+    ("addr",  "addr")
+];
+
+ENUM "hs_state" ["IDLE", "REQ", "ACK", "DONE"];
+
+let rw_data_sz = NODE_SZ + 2;
+
+STRUCT "rw_data" rw_data_sz [
+    ("start",  "bit",  [0]),
+    ("ack",    "bit",  [1]),
+    ("req",    "bit",  [0]),
+    ("done",   "bit",  [1]),
+    ("data",   "node", ((NODE_SZ+1)--2))
+];
+
+let read_protocol name =
+    bit_input      clk.
+    rw_data_input  din.
+    rw_data_output dout.
+    // Internal wires
+    internal            ireq idone idata.
+    hs_state_internal   state.
+    bit_internal	reset.
+    CELL ("draw_hier read_"^name) [
+	reset <- '~' din-->start,
+	ireq <- (is_REQ state),
+	Moore_FSM "handshaker" clk state (reset --- IDLE) [
+		IDLE	--- din-->start     --- REQ,
+		REQ	--- din-->ack	    --- ACK,
+		ACK	--- '~' (din-->ack) ---	DONE
+	],
+	re_ff_en clk (ireq '&' (din-->ack)) (din-->data) idata,
+	idone <- (is_DONE state),
+        dout <- '0<--req ? ireq
+                  <--done ? idone
+                  <--data ? idata
+];
+
+let write_protocol name =
+    bit_input      clk.
+    rw_data_input  din.
+    rw_data_output dout.
+    // Internal wires
+    internal            ireq idone idata.
+    hs_state_internal   state.
+    bit_internal	reset.
+    CELL ("draw_hier write_"^name) [
+	reset <- '~' (din-->start),
+	ireq <- is_REQ state,
+	Moore_FSM "handshaker" clk state (reset --- IDLE) [
+		IDLE	--- din-->start     --- REQ,
+		REQ	--- din-->ack       --- ACK,
+		ACK	--- '~' (din-->ack) ---	DONE
+	],
+	re_ff_en clk (din-->start) (din-->data) idata,
+	idone <- is_DONE state,
+        dout <- '0<--req ? ireq
+                  <--done ? idone
+                  <--data ? idata
+];
+
+STRUCT "alloc_data" (ADDR_SZ + 2) [
+    ("start", "bit",  [0]),
+    ("ack",   "bit",  [1]),
+    ("req",   "bit",  [0]),
+    ("done",  "bit",  [1]),
+    ("addr",  "addr", ((ADDR_SZ+1)--2))
+];
+
+let alloc_protocol =
+    bit_input           clk reset.
+    alloc_data_input    din.
+    alloc_data_output   dout.
+    // -- Internal wires --
+    addr_internal       cur_addr next_addr.
+    hs_state_internal   step.
+    rww_internal        step_ready.
+    CELL ("draw_hier alloc") [
+        Moore_FSM "alloc_manager" clk step (reset --- IDLE) [
+            IDLE    --- '~' (is_READY step_ready)                   --- REQ,
+            REQ     --- (din-->ack) '&' '~' (is_WAIT step_ready)    --- ACK,
+            ACK     --- '~' (din-->ack)                             --- DONE,
+            DONE    --- (is_READY step_ready)                       --- IDLE
+        ],
+        Moore_FSM "alloc_is_ready" clk step_ready (reset --- WORK) [
+            READY   ---     (din-->start)   --- WAIT,
+            WAIT    --- '~' (din-->start)   --- WORK,
+            WORK    --- (is_DONE step)      --- READY
+        ],
+        re_ff_en clk (din-->start) next_addr cur_addr,
+        re_ff_en clk (din-->ack) (din-->addr) next_addr,
+        dout <- '0<--req  ? ('~' reset '&' (is_REQ step))
+                  <--done ? (is_WAIT step_ready)
+                  <--addr ? cur_addr
+    ]
+;
+
+let p_alloc     = alloc_protocol 'clk 'reset 'din 'dout;
+let ckt_alloc   = pexlif2fsm p_alloc;
+let v_alloc     = STE_debug ckt_alloc;
+
+
+// ================================================
+// § I/O Wrappers
+// ================================================
+0;
+
+
+// Wrapper for the many read operations
+// Inputs
+//   <clk (bit)>        the clock
+//   <req (bit)>        request to read. SHOULD ONLY BE SET WHEN mem_ack IS LOW
+//                      (this is ensured by the FSM)
+//   <sig_in (signal)>  the signal from memory
+//   <addr (addr)>      the address to read from
+// Outputs
+//   <node_read (node)> the node read (only valid when req and mem_ack are true)
+//   <sig_out (signal)> signal to memory
+let read_wrapper name =
+	// Inputs
+	bit_input clk read_req.
+	signal_input sig_in.
+	addr_input read_addr.
+	// Outputs
+	node_output read_node.
+	signal_output read_sig.
+	CELL (name^"_read_wrapper") [
+		read_node <- sig_in-->node,
+		read_sig <- '0<--read ? read_req
+		              <--addr ? read_addr
+	];
+
+
+let read_wrapper_pexlif = read_wrapper "debug"
+                          'clk 'read_req 'sig_in 'read_addr
+                          'read_node 'read_sig;
+let read_wrapper_fsm    = pexlif2fsm read_wrapper_pexlif;
+let read_wrapper_vis    = STE_debug read_wrapper_fsm;
+
+// Wrapper for the many write operations
+// Inputs
+//   <clk (bit)>        the clock
+//   <req (bit)>        request to write. SHOULD ONLY BE SET WHEN mem_ack IS LOW.
+//                      (this is ensured by the FSM)
+//   <sig_in (signal)>  the signal from memory
+//   <node (node)>      the node to write
+//   <addr (addr)>      the address to read from
+// Outputs
+//   <sig_out (signal)> signal to memory
+let write_wrapper name =
+	// Inputs
+	bit_input clk write_req.
+	signal_input sig_in.
+	node_input write_node.
+	addr_input write_addr.
+	// Outputs
+	signal_output write_sig.
+	CELL (name^"_write_wrapper") [
+		write_sig <- '0<--write ? write_req
+		               <--node  ? (write_node<--type ? G_INT)
+		               <--addr  ? write_addr
+	];
+
+
+let write_wrapper_pexlif = write_wrapper "debug"
+                           'clk 'write_req 'sig_in 'write_node 'write_addr
+                           'write_sig;
+let write_wrapper_fsm    = pexlif2fsm write_wrapper_pexlif;
+let write_wrapper_vis    = STE_debug write_wrapper_fsm;

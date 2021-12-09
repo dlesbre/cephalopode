@@ -1,0 +1,208 @@
+cload (DIR^"mc.fl");
+cload (DIR^"ram.fl");
+cload (DIR^"rom.fl");
+
+let memory_system =
+    //
+    // Global signals
+    //
+    bit_input	clk reset.
+    cr_inout	cr.
+    bit_output	reducto.
+    bit_output	jmp.
+    addr_output jmp_addr.
+    //
+    // Interface to reduction engine
+    //
+    bit_input	r_allocate_req.
+    bit_output	r_allocate_ack.
+    addr_output	r_allocate_addr.
+    //
+    bit_input	r_read_req.
+    bit_input	r_write_req.
+    addr_input	r_rw_addr.
+    bit_output	r_rw_ack.
+    node_input	r_write_data.
+    node_output	r_read_data.
+    //
+    // Interface to arithmetic engine
+    //
+    bit_input	a_allocate_req.
+    bit_output	a_allocate_ack.
+    addr_output	a_allocate_addr.
+    //
+    bit_input	a_read_req.
+    bit_input	a_write_req.
+    addr_input	a_rw_addr.
+    bit_output	a_rw_ack.
+    node_input	a_write_data.
+    node_output	a_read_data.
+    //
+    // Internal signals
+    //
+    // RAM interface
+    eaddr_internal  ram_addr.
+    bit_internal    ram_rw.
+    node_internal   ram_data_from_mem.
+    node_internal   ram_data_to_mem.
+    // ROM interface
+    addr_internal   rom_addr.
+    node_internal   rom_data_from_mem.
+    bit_internal    ready.
+    addr_internal   entry_point.
+    // Interface internals
+    bit_internal    r_rw_req.
+    bit_internal    r_rw.
+    bit_internal    a_rw_req.
+    bit_internal    a_rw.
+    CELL "draw_hier memory_system" [
+	r_rw_req <- r_read_req '|' r_write_req,
+	r_rw <- '~' r_write_req,
+	//
+	a_rw_req <- a_read_req '|' a_write_req,
+	a_rw <- '~' a_write_req,
+	//
+	MEM_CTRL clk reset cr
+	    ready entry_point
+	    r_allocate_req r_allocate_ack r_allocate_addr
+	    r_rw_req r_rw r_rw_addr r_rw_ack r_write_data r_read_data
+	    a_allocate_req a_allocate_ack a_allocate_addr
+	    a_rw_req a_rw a_rw_addr a_rw_ack a_write_data a_read_data
+	    ram_addr ram_rw ram_data_from_mem ram_data_to_mem
+	    rom_addr rom_data_from_mem,
+	RAM ram_rw ram_addr ram_data_to_mem ram_data_from_mem,
+	ROM "flash" rom_addr rom_data_from_mem,
+	re_ff clk ready reducto,
+	jmp <- ready '&' '~' reducto,
+	jmp_addr <- entry_point
+];
+
+//let HS name =
+//    bit_input	clk.
+//    bit_input	reset.
+//    bit_input   do_op.
+//    bit_output	req.
+//    bit_input	ack.
+//    bit_internal state.
+//    //
+//    CELL (sprintf "draw_hier %s" name) [
+//	STATE clk state [
+//	    reset --- '0,
+//	    do_op --- '1,
+//	    ack   --- '0
+//	],
+//	req <- (state '=' '0) '&' do_op '|' (state '=' '1)
+//];
+//
+//let test_memory_system =
+//    //
+//    // Global signals
+//    //
+//    bit_input	clk reset.
+//    cr_inout	cr.
+//    bit_output	reducto.
+//    bit_output	jmp.
+//    addr_output jmp_addr.
+//    //
+//    // Interface to reduction engine
+//    //
+//    bit_input	r_do_allocate.
+//    addr_output	r_allocate_addr.
+//    //
+//    bit_input	r_do_rw.
+//    bit_input	r_rw.
+//    addr_input	r_rw_addr.
+//    node_input	r_write_data.
+//    node_output	r_read_data.
+//    //
+//    // Interface to arithmetic engine
+//    //
+//    bit_input	a_do_allocate.
+//    addr_output	a_allocate_addr.
+//    //
+//    bit_input	a_do_rw.
+//    bit_input	a_rw.
+//    addr_input	a_rw_addr.
+//    node_input	a_write_data.
+//    node_output	a_read_data.
+//    //
+//    // Internal signals
+//    //
+//    bit_internal	r_allocate_req.
+//    bit_internal	r_allocate_ack.
+//    bit_internal	r_rw_req.
+//    bit_internal	r_rw_ack.
+//    bit_internal	a_allocate_req.
+//    bit_internal	a_allocate_ack.
+//    bit_internal	a_rw_req.
+//    bit_internal	a_rw_ack.
+//    //
+//    CELL "draw_hier test_memory_system" [
+//	HS "r_alloc" clk reset r_do_allocate r_allocate_req r_allocate_ack,
+//	HS "r_rw" clk reset r_do_rw r_rw_req r_rw_ack,
+//	HS "a_alloc" clk reset a_do_allocate a_allocate_req a_allocate_ack,
+//	HS "a_rw" clk reset a_do_rw a_rw_req a_rw_ack,
+//	memory_system clk reset cr reducto jmp jmp_addr
+//		r_allocate_req r_allocate_ack r_allocate_addr
+//		r_rw_req r_rw r_rw_addr r_rw_ack r_write_data r_read_data
+//		a_allocate_req a_allocate_ack a_allocate_addr
+//		a_rw_req a_rw a_rw_addr a_rw_ack a_write_data a_read_data
+//];
+//
+//let p = test_memory_system 'clk 'reset 'cr 'reducto 'jmp 'jmp_addr
+//	    'r_do_allocate 'r_allocate_addr
+//	    'r_do_rw 'r_rw 'r_rw_addr 'r_write_data 'r_read_data
+//	    'a_do_allocate 'a_allocate_addr
+//	    'a_do_rw 'a_rw 'a_rw_addr 'a_write_data 'a_read_data
+//;
+//
+//let ckt = pexlif2fsm p;
+//ckt;
+//
+//let vis = STE_debug ckt;
+//
+//let N = 200;
+//
+//
+//let ant =
+//    (make_CR_ant ckt [("i_ram_latency", RAM_LATENCY),
+//		      ("ram_latency", RAM_LATENCY),
+//		      ("i_rom_latency", ROM_LATENCY)] (N cycles))
+//  and
+//    "cr[2:0]" is 0 for N cycles
+//  and
+//    mk_ROM_ant ckt "flash" "../../compile/medium.rom"
+//  and
+//    "clk" is_clock N
+//  and
+//    "reset" is 1 for 1 cycle otherwise 0 until N cycles
+//  and
+//    "r_do_allocate" is 0 for N cycles
+//  and
+//    "r_rw_addr[5:0]" is 0x1 in_cycle 150 for 8 cycles followed_by
+//			0x2 in_cycle 160 for 8 cycles
+//  and
+//    "r_do_rw" is 1 in_cycle 150 followed_by
+//		 1 in_cycle 160
+//		 otherwise 0 until N cycles
+//  and
+//    "r_rw" is 1 in_cycle 150 for 8 cycles followed_by
+//	      0 in_cycle 160 for 8 cycles
+//	      otherwise 1 until N cycles
+//  and
+//    "a_do_allocate" is 0 for N cycles
+//  and
+//    "a_rw_addr[5:0]" is 0x7 for N cycles
+//  and
+//    "a_do_rw" is 0 in_cycle 150 followed_by
+//		 0 in_cycle 160
+//		 otherwise 0 until N cycles
+//  and
+//    "a_rw" is 1 in_cycle 150 followed_by
+//	      1 in_cycle 160
+//	      otherwise 1 until N cycles
+//;
+//
+//STE "-e" vis [] ant [] [];
+//
+//
