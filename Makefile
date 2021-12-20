@@ -100,13 +100,13 @@ clean-all: clean ## Remove all generated files
 	echo "$(color_yellow)Cleaning bifrost executable$(color_reset)"
 	-rm $(BIFROST_EXE)
 
-docker-build: ## Build the docker image
+docker-build: clean-all ## Build the docker image
 	echo "$(color_yellow)Building docker image$(color_reset)"
 	$(DOCKER) build -t $(DOCKER_IMG_NAME) .
 
 docker-run: ## Run the docker image (requires building first)
 	echo "$(color_yellow)Running docker image$(color_reset)"
-	$(DOCKER) run -it $(DOCKER_IMG_NAME) /bin/bash --rm
+	$(DOCKER) run --rm -it $(DOCKER_IMG_NAME) /bin/bash
 
 docker-zip: ## Zip the docker image for export
 	echo "$(color_yellow)Zipping docker image$(color_reset)"

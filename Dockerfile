@@ -12,11 +12,9 @@ RUN apt-get -y install git gcc g++ doxygen flex bison gawk \
 # Get and build Voss II
 RUN git clone https://github.com/TeamVoss/VossII.git
 RUN make -C VossII/src install
-ENV fl=VossII/bin/fl
 
 # Build bifrost and copy cephalopode files
 COPY . cephalopode/
 RUN make -C cephalopode bifrost
-ENV bifrost=cephalopode/bifrost/bifrost
 
 CMD bash
