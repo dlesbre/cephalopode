@@ -389,10 +389,10 @@ let eval_test (
 	let test_result = (get_ste_result ste_result "strong") == T in
 	let test_duration = last_high ste_result "op_ack" in
 	(verbose)
-		=> printf "TEST_%-17s : %6s in %d steps\n"
+		=> printf "TEST_%-17s : %6s in %d cycles\n"
 				name
 				(test_result => "OK" | "FAILED")
-				test_duration
+				(test_duration / 2) // Use clock cycles and not phases
 			fseq test_result
 		|  test_result;
 
@@ -808,12 +808,3 @@ clet TEST_ALU = TEST_COMPARATOR nl_AND TEST_LOGICAL nl_AND TEST_ARITHMETIC;
 clet TEST_ALU_LONG = TEST_ALU nl_AND TEST_ARITHMETIC_LONG;
 
 // TEST_ALU;
-
-// TODO:
-// P_SQRT ?? (not yet implemented)
-// P_PROC_INIT (WTF is this ??)
-//
-// Done:
-// COMPARATOR : P_EQ, P_NEQ, P_GT, P_GEQ,
-// LOGICAL    : P_AND, P_OR, P_NOT, P_COND,
-// ARITHMETIC : P_PLUS, P_MINUS, P_TIMES, P_DIVMOD,
