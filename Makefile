@@ -89,7 +89,7 @@ clean: bifrost-clean compile-clean ## Remove build files
 
 clean-all: clean ## Remove all generated files
 	echo "$(color_yellow)Cleaning bifrost executable$(color_reset)"
-	-rm $(BIFROST)
+	-rm $(BIFROST_EXE)
 
 help: ## Show this help
 	echo "$(color_yellow)make:$(color_reset) usefull targets:"
