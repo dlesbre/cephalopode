@@ -21,7 +21,9 @@ This repository is organized as follows:
 - `RTL/` - an RTL description of the Cephalopode processor written in HFL. A fast example can be run by loading the `cephalopode.fl` main file. (run `make cephalopode`)
 - `RTL/ALU/` - the Cephalopode ALU, performs operations on arbitrary-precision integers. It contains some parts in Stately (`.fsm` files), some in Bifröst (`.prog` files) as well as their compiled FL code (corresponding `.fsm.fl` and `.prog.fl`)
 
-	You can run `make ALU-test` to load the ALU test suite (`RTL/ALU/ALU_test.fl`) then evaluate the relevant test in the interpretor (for instance `TEST_ADD;`). Beware that some of these can be very long
+	You can run `make ALU-test` to load the ALU test suite (`RTL/ALU/ALU_test.fl`) then evaluate the relevant test in the interpretor (for instance `TEST_ADD;`). Beware that some of these can be very long.
+
+	You can run `make bifrost-alu` to recompile the ALU divider (`RTL/ALU/arith/div.prog`) and multiplier (`RTL/ALU/arith/mul.prog`) with bifrost. Their compiled versions are aldready available in the `.prog.fl` files.
 
 - `compile/` - tools to create ROM images for Cephalopode
 - `Makefile` - see `make help` for a list of targets
@@ -35,6 +37,8 @@ The Bifröst compiler is written in Haskell. It requires the Haskell platform
 	sudo apt install ghc bnfc
 
 It can then be built using `make bifrost`. The examples programs in `./bifrost/examples` can be compiled with `make bifrost-examples`.
+
+You can recompile the ALU multiplier and divider with `make bifrost-alu`.
 
 ### Cephalopode
 

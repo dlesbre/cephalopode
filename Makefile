@@ -12,6 +12,8 @@ BIFROST_EXAMPLES_LIST = \
 	$(addprefix blockcipher/, cbc cipher_caesar sink source) \
 	$(addprefix fib/, fib myadder)
 
+BIFROST_ALU_LIST = $(addprefix RTL/ALU/arith/, div mul)
+
 color = on
 
 # =============================
@@ -28,7 +30,8 @@ else
 	color_reset=
 endif
 
-BIFROST_TARGETS = $(addprefix $(BIFROST_EXAMPLES)/, $(addsuffix .prog.fl,$(BIFROST_EXAMPLES_LIST)))
+BIFROST_EXAMPLE_TARGETS = $(addprefix $(BIFROST_EXAMPLES)/, $(addsuffix .prog.fl,$(BIFROST_EXAMPLES_LIST)))
+BIFROST_ALU_TARGETS = $(addsuffix .prog.fl, $(BIFROST_ALU_LIST))
 
 # =============================
 # Default target
@@ -46,8 +49,8 @@ $(BIFROST_EXE):
 	echo "$(color_yellow)Cleaning build files $@$(color_reset)"
 	$(MAKE) -C $(BIFROST) clean
 
-$(BIFROST_EXAMPLES)/%.prog.fl: $(BIFROST_EXAMPLES)/%.prog $(BIFROST_EXE)
-	echo "$(color_yellow)Compiling $@$(color_reset)"
+%.prog.fl: %.prog $(BIFROST_EXE)
+	echo "$(color_yellow)Compiling $@ with bifrost$(color_reset)"
 	$(BIFROST_EXE) $<
 
 # =============================
@@ -58,14 +61,15 @@ $(BIFROST_EXAMPLES)/%.prog.fl: $(BIFROST_EXAMPLES)/%.prog $(BIFROST_EXE)
 $(VERBOSE).SILENT:
 
 .PHONY: \
-	bifrost bifrost-clean bifrost-examples \
+	bifrost bifrost-alu bifrost-clean bifrost-examples \
 	cephalopode ALU-test \
 	compile compile-clean \
 	clean clean-all
 
 bifrost: $(BIFROST_EXE) ## Create the bifrost executable
 
-bifrost-examples: $(BIFROST_TARGETS) ## Compile the bifrost examples to HFL
+bifrost-alu: $(BIFROST_ALU_TARGETS) ## Compile the divider and multiplier to HFL with bifrost
+bifrost-examples: $(BIFROST_EXAMPLE_TARGETS) ## Compile the bifrost examples to HFL
 
 bifrost-clean: ## Remove bifrost build files
 	echo "$(color_yellow)Cleaning bifrost build files$(color_reset)"
