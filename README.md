@@ -8,7 +8,9 @@ This repository also contains the Bifröst compiler, a high-level synthesis tool
 
 **Contents:**
 - [Repository description](#repository-description)
-- [Dependencies](#dependencies)
+- [Dependencies and installation](#dependencies-and-installation)
+	- [Bifröst](#bifröst)
+	- [Cephalopode](#cephalopode)
 - [References](#references)
 
 ## Repository description
@@ -24,14 +26,73 @@ This repository is organized as follows:
 - `compile/` - tools to create ROM images for Cephalopode
 - `Makefile` - see `make help` for a list of targets
 
-## Dependencies
+## Dependencies and installation
+
+### Bifröst
 
 The Bifröst compiler is written in Haskell. It requires the Haskell platform
 
-Building and running Cephalopode requires [Voss II](https://github.com/TeamVoss/VossII), which can be downloaded and installed from the linked repository.
+	sudo apt install ghc bnfc
 
-Additionnaly, some parts of the processor were designed using [Stately](https://github.com/popje-chalmers/stately), a custom FSM editor. The `.fsm` files should be read with it. We have also provided the exported versions of these files as well (with extension `.fsm.fl`)
- It can also be downloaded and installed by following the link.
+It can then be built using `make bifrost`. The examples programs in `./bifrost/examples` can be compiled with `make bifrost-examples`.
+
+### Cephalopode
+
+Building and running Cephalopode requires [Voss II](https://github.com/TeamVoss/VossII). To install it:
+
+1. Install Voss II's dependencies:
+
+	```
+	sudo apt install tk gcc g++ doxygen flex bison gawk \
+	                 libz-dev tcl-dev tk-dev libc6-dev \
+	                 clang libreadline-dev python3 imagemagick pandoc
+	```
+
+2. Clone Voss II's repository with SSH or HTTPS (run only ONE of these!)
+
+	```
+	git clone git@github.com:TeamVoss/VossII.git
+	git clone https://github.com/TeamVoss/VossII.git
+	```
+
+3. Run the makefile to build it:
+
+	```
+	cd Voss II
+	make -C src install
+	```
+
+	The makefile may fail when building yosys. This doesn't really matter as we don't use yosys in cephalopode.
+
+4. You can check your install by running the fl interpretor (`.../VossII/bin/fl`). It should open a new window with the fl interpretor.
+
+	Type `load "ste.fl";` in the interpretor to verify that you have the HFL library.
+
+5. You're done. For convenience, you can add the fl interpretor (`.../VossII/bin/fl`) to your PATH:
+
+	```
+	export PATH="path/to/VossII/bin:$PATH"
+	```
+
+	Or replace the first line of the `Makefile` with the relevant path.
+
+An optionnal dependency is [Stately](https://github.com/popje-chalmers/stately), a custom FSM editor. It is used to read the `.fsm` files and display a visualy editable state machine. The exported versions of these files was also provided as well (with extension `.fsm.fl`). It requires java to run. To install it:
+
+1. Clone the repository with SSH or HTTPS
+
+	```
+	git clone git@github.com:popje-chalmers/stately.git
+	git clone https://github.com/popje-chalmers/stately.git
+	```
+
+2. Build and run
+
+	```
+	make run
+	```
+
+	And use the interface to navigate to the `.fsm` files.
+
 
 ## References
 
