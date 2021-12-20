@@ -8,6 +8,10 @@ CEPHALOPODE = ./RTL/cephalopode.fl
 ALU_TEST = ./RTL/ALU/ALU_test.fl
 EXAMPLES = ./compile/examples.fl
 
+DOCKER = sudo docker
+DOCKER_IMG_NAME = cephalopode
+DOCKER_ZIP_NAME = cephalopode.zip
+
 BIFROST_EXAMPLES_LIST = \
 	$(addprefix blockcipher/, cbc cipher_caesar sink source) \
 	$(addprefix fib/, fib myadder)
@@ -64,7 +68,8 @@ $(VERBOSE).SILENT:
 	bifrost bifrost-alu bifrost-clean bifrost-examples \
 	cephalopode ALU-test \
 	compile compile-clean \
-	clean clean-all
+	clean clean-all \
+	docker-build docker-run
 
 bifrost: $(BIFROST_EXE) ## Create the bifrost executable
 
@@ -94,6 +99,18 @@ clean: bifrost-clean compile-clean ## Remove build files
 clean-all: clean ## Remove all generated files
 	echo "$(color_yellow)Cleaning bifrost executable$(color_reset)"
 	-rm $(BIFROST_EXE)
+
+docker-build: ## Build the docker image
+	echo "$(color_yellow)Building docker image$(color_reset)"
+	$(DOCKER) build -t $(DOCKER_IMG_NAME) .
+
+docker-run: ## Run the docker image (requires building first)
+	echo "$(color_yellow)Running docker image$(color_reset)"
+	$(DOCKER) run -it $(DOCKER_IMG_NAME) /bin/bash --rm
+
+docker-zip: ## Zip the docker image for export
+	echo "$(color_yellow)Zipping docker image$(color_reset)"
+	$(DOCKER) save -o $(DOCKER_ZIP_NAME) $(DOCKER_IMG_NAME)
 
 help: ## Show this help
 	echo "$(color_yellow)make:$(color_reset) usefull targets:"
