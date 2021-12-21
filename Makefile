@@ -10,7 +10,7 @@ EXAMPLES = ./compile/examples.fl
 
 DOCKER = sudo docker
 DOCKER_IMG_NAME = cephalopode
-DOCKER_ZIP_NAME = cephalopode.zip
+DOCKER_ZIP_NAME = docker_image.zip
 
 BIFROST_EXAMPLES_LIST = \
 	$(addprefix blockcipher/, cbc cipher_caesar sink source) \
@@ -69,16 +69,20 @@ $(VERBOSE).SILENT:
 	cephalopode ALU-test \
 	compile compile-clean \
 	clean clean-all \
-	docker-build docker-run
+	docker-build docker-run docker_zip
 
 bifrost: $(BIFROST_EXE) ## Create the bifrost executable
 
-bifrost-alu: $(BIFROST_ALU_TARGETS) ## Compile the divider and multiplier to HFL with bifrost
-bifrost-examples: $(BIFROST_EXAMPLE_TARGETS) ## Compile the bifrost examples to HFL
+bifrost-alu: $(BIFROST_ALU_TARGETS) ## Compile the divider and multiplier (in RTL/ALU/arith) to HFL
+bifrost-examples: $(BIFROST_EXAMPLE_TARGETS) ## Compile the bifrost examples (in bifrost/examples/) to HFL
 
-bifrost-clean: ## Remove bifrost build files
+bifrost-clean: ## Remove bifrost build files (but not executable)
 	echo "$(color_yellow)Cleaning bifrost build files$(color_reset)"
 	$(MAKE) -C bifrost clean
+
+bifrost-clean-exe: ## Remove the bifrost executable
+	echo "$(color_yellow)Deleting bifrost executable$(color_reset)"
+	-rm -f $(BIFROST_EXE)
 
 compile: ## Compiles example ROM images for cephalopode
 	echo "$(color_yellow)Building example ROM images in ./compile$(color_reset)"
@@ -96,9 +100,8 @@ ALU-test: ## Run the ALU test file
 
 clean: bifrost-clean compile-clean ## Remove build files
 
-clean-all: clean ## Remove all generated files
-	echo "$(color_yellow)Cleaning bifrost executable$(color_reset)"
-	-rm $(BIFROST_EXE)
+clean-all: clean bifrost-clean-exe ## Remove all generated files
+
 
 docker-build: clean-all ## Build the docker image
 	echo "$(color_yellow)Building docker image$(color_reset)"
@@ -109,8 +112,8 @@ docker-run: ## Run the docker image (requires building first)
 	$(DOCKER) run --rm -it $(DOCKER_IMG_NAME) /bin/bash
 
 docker-zip: ## Zip the docker image for export
-	echo "$(color_yellow)Zipping docker image$(color_reset)"
-	$(DOCKER) save -o $(DOCKER_ZIP_NAME) $(DOCKER_IMG_NAME)
+	echo "$(color_yellow)Zipping docker image to $(DOCKER_ZIP_NAME)$(color_reset)"
+	$(DOCKER) save $(DOCKER_IMG_NAME) | gzip > $(DOCKER_ZIP_NAME)
 
 help: ## Show this help
 	echo "$(color_yellow)make:$(color_reset) usefull targets:"
