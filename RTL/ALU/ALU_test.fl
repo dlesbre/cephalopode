@@ -24,7 +24,7 @@ cload (DIR^"test_memory.fl");
 // ================================================
 
 
-let RAM_name = "i2/ram";
+let RAM_name = "i1/ram";
 
 // g_type values
 let g_type_bv x = fixed_bv2list (get_hw_type_size "g_type") T (int2bv x);
@@ -243,10 +243,10 @@ let ALU_tester_fanim  = draw_fanin ALU_tester_vis (0) 100 [
 
 let ALU_tester_waveform vis = add_waveform vis [ "op_ack"
 	, "overwrite_redex", "new_redex_value[14:0]", "i1/c_answer"
-	, "sig_out[23]", "sig_out[22]", "sig_out[21]", "sig_out[20:6]"
-	, "sig_out[5:0]", "sig_out[20:15]", "sig_out[14:9]", "sig_out[8:6]"
-	, "sig_in[23]", "sig_in[22]", "sig_in[21]", "sig_in[20:6]"
-	, "sig_in[5:0]", "sig_in[20:15]", "sig_in[14:9]", "sig_in[8:6]"
+	, "i1/sig_out[35]", "i1/sig_out[34]", "i1/sig_out[33]", "i1/sig_out[32:10]"
+	, "i1/sig_out[9:0]", "i1/sig_out[28:23]", "i1/sig_out[22:13]", "i1/sig_out[12:10]"
+	, "i1/sig_in[35]", "i1/sig_in[34]", "i1/sig_in[33]", "i1/sig_in[32:10]"
+	, "i1/sig_in[9:0]", "i1/sig_in[28:23]", "i1/sig_in[22:13]", "i1/sig_in[12:10]"
 	// , "i1/i18/i6/i1/step[4:0]" // adder state
 	// , "i1/i18/i7/i1/i1/state_multiplier[3:0]", "i1/i18/i7/i1/i1/var_node_res[14:0]"
 	// , "i1/i18/i7/i1/i1/var_node_res[14:9]", "i1/i18/i7/i1/i1/var_carry_int[5:0]"
@@ -283,18 +283,17 @@ let B = [B3, B2, B1, B0];
 // ================================================
 0;
 
-
 let mk_inputs steps op_type redex_addr a_src_addr b_src_addr c_src_addr d_src_addr =
 	"clk" is_clock steps
 	and "set_memory" is "1" for 2 phases followed_by "0" for (steps-2) phases
 	and "reset" is "1" for 4 phases followed_by "0" for (steps-4) phases
 	and "op_req" is "0" for 4 phases followed_by "1" for (steps-4) phases
 	and "op_type[3:0]" is op_type for steps phases
-	and "redex_addr[5:0]" is redex_addr for steps phases
-	and "a_src_addr[5:0]" is a_src_addr for steps phases
-	and "b_src_addr[5:0]" is b_src_addr for steps phases
-	and "c_src_addr[5:0]" is c_src_addr for steps phases
-	and "d_src_addr[5:0]" is d_src_addr for steps phases;
+	and "redex_addr[9:0]" is redex_addr for steps phases
+	and "a_src_addr[9:0]" is a_src_addr for steps phases
+	and "b_src_addr[9:0]" is b_src_addr for steps phases
+	and "c_src_addr[9:0]" is c_src_addr for steps phases
+	and "d_src_addr[9:0]" is d_src_addr for steps phases;
 
 // Int variables
 
@@ -307,9 +306,10 @@ let next_head default function ([]) = default
 letrec ram_link steps ([]) = []
     /\ ram_link steps ((addr, value):t) =
 		let desc = sprintf "%s[%s]" RAM_name addr in
-		(desc^"[14:9]") is value for steps phases and
-		(desc^"[8:3]") is (next_head "0" (fst) t) for steps phases and
-		(desc^"[2:0]") is G_INT for steps phases and (ram_link steps t);
+		(desc^"[22:19]") is "0" for steps phases and
+		(desc^NODE_INT_RANGE) is value for steps phases and
+		(desc^NODE_ADDR_RANGE) is (next_head "0" (fst) t) for steps phases and
+		(desc^NODE_TYPE_RANGE) is G_INT for steps phases and (ram_link steps t);
 
 // newly allocated addresses start here - 0x29
 let ADDR_ALLOC = "41";
@@ -323,7 +323,7 @@ let ADDR_FREE  = 9;
 // Use partial address for shorter number
 let init_ram steps = "ram_max_addr[5:0]" is ADDR_ALLOC for steps phases
 	// used for the divider when checking division by 0...
-	and (RAM_name^"[0][14:0]") is "0" for steps phases
+	and (RAM_name^"[0][22:0]") is "0" for steps phases
 	and (ram_link steps [("1",  A3), ("2",  A2), ("3",  A1), ("4",  A0)])
 	and (ram_link steps [("5",  B3), ("6",  B2), ("7",  B1), ("8",  B0)]);
 
@@ -391,10 +391,10 @@ let eval_test (
 	let test_result = (get_ste_result ste_result "strong") == T in
 	let test_duration = last_high ste_result "op_ack" in
 	(verbose)
-		=> printf "TEST_%-17s : %6s in %d steps\n"
+		=> printf "TEST_%-17s : %6s in %d cycles\n"
 				name
 				(test_result => "OK" | "FAILED")
-				test_duration
+				(test_duration / 2) // Switch from steps to cycles
 			fseq test_result
 		|  test_result;
 
@@ -448,7 +448,7 @@ let test_factory name op_type cons =
 	in tester;
 
 // Run all test in the list
-// Return true if all suceed
+// Return true if all succeed
 letrec test_series ([]) = T
     /\ test_series (t:q) = t nl_AND (test_series q);
 
@@ -474,24 +474,24 @@ let VAR_ORDER_1_DIVIDER  = ["op_req","rect","let__main_0_7","let_end_flip_r_2_2"
 
 // STE consequence for node name is 1-chunk int with value value in given phase
 let bool_node_cons name step value =
-	(name^"[14:10]") is "0" in_phase step and
-	(name^"[9]") is value in_phase step and
-	(name^"[8:3]") is "0" in_phase step and
-	(name^"[2:0]") is G_INT in_phase step;
+	(name^"[18:14]") is "0" in_phase step and
+	(name^"[13]") is value in_phase step and
+	(name^NODE_ADDR_RANGE) is "0" in_phase step and
+	(name^NODE_TYPE_RANGE) is G_INT_bv in_phase step;
 
 // STE consequence for node name indirection to node laddr in given phase
 let indir_node_cons name step laddr =
-	(name^"[14:9]") is "0" in_phase step and
-	(name^"[8:3]") is laddr in_phase step and
-	(name^"[2:0]") is G_INDIR in_phase step;
+	(name^NODE_INT_RANGE) is "0" in_phase step and
+	(name^NODE_ADDR_RANGE) is laddr in_phase step and
+	(name^NODE_TYPE_RANGE) is G_INDIR_bv in_phase step;
 
 // STE consequence for node of the logical unit:
 //  - if test is true, 1-chunk integer node with value value
 //  - else indirection to laddr
 let mixed_node_cons name step value test laddr =
-	(name^"[14:9]") is (IF test THEN value ELSE bv_0) in_phase step and
-	(name^"[8:3]") is (IF test THEN bv_0 ELSE laddr) in_phase step and
-	(name^"[2:0]") is (IF test THEN G_INT_bv ELSE G_INDIR_bv) in_phase step;
+	(name^NODE_INT_RANGE) is (IF test THEN value ELSE bv_0) in_phase step and
+	(name^NODE_ADDR_RANGE) is (IF test THEN bv_0 ELSE laddr) in_phase step and
+	(name^NODE_TYPE_RANGE) is (IF test THEN G_INT_bv ELSE G_INDIR_bv) in_phase step;
 
 // Simple STE boolean node consequence
 let boolean_cons value step =
@@ -514,9 +514,9 @@ let mixed_cons test value laddr step =
 // Consequence for arithmetic operations
 let arith_cons value step =
 	"overwrite_redex" is "0" in_phase step and
-	"redex_int[47:0]" is (fixed_bv2list (8*INT_SZ) T value) in_phase step and
-	"redex_int_is_clean" is "1" in_phase step and
-	"redex_int_is_int" is "1" in_phase step;
+	"i1/redex_int[47:0]" is (fixed_bv2list (8*INT_SZ) T value) in_phase step and
+	"i1/redex_int_is_clean" is "1" in_phase step and
+	"i1/redex_int_is_int" is "1" in_phase step;
 
 
 // Consequence for the divider operations
@@ -638,7 +638,7 @@ let and_cons a _ _ addr_b steps = mixed_cons (bv_eq a bv_0) bv_0 (int2bv addr_b)
 let test_and = test_factory "AND" P_AND and_cons;
 
 let TEST_AND = test_series [
-	test_and 1 1 40,
+	test_and 1 1 20,
 	test_and 2 1 40,
 	test_and 1 2 40,
 	test_and 2 2 40,
@@ -756,7 +756,17 @@ let TEST_MUL_LONG = test_series [
 	test_mul 3 1 700
 ];
 
-let TEST_MUL_EX a b = // text with explicit values
+let TEST_AND_EX a b = // test with explicit values
+	let steps = 40 in
+	printf "a = %s\nb = %s\n" (sprint_number a) (sprint_number b) fseq
+	eval_test (
+		"AND_EX", T, T, [], steps, P_AND,
+		mk_addr (ADDR_FREE), mk_addr (ADDR_FREE + 1), "0", "0",
+		more_ints steps [a, b],
+		and_cons (int2bv a) 0 0 (ADDR_FREE + 1) (steps-4), []
+);
+
+let TEST_MUL_EX a b = // test with explicit values
 	let steps = 570 in
 	printf "a = %s\nb = %s\n" (sprint_number a) (sprint_number b) fseq
 	eval_test (
@@ -781,7 +791,7 @@ let TEST_DIV_LONG = test_series [
 	test_div 2 2 2500 // Warning; patience required here. It passed though
 ];
 
-let TEST_DIV_EX a b = // text with explicit values
+let TEST_DIV_EX a b = // test with explicit values
 	let steps = 2500 in
 	printf "a = %s\nb = %s\n" (sprint_number a) (sprint_number b) fseq
 	eval_test (
@@ -797,25 +807,10 @@ let TEST_ARITHMETIC_LONG = TEST_ADD_LONG
 	nl_AND TEST_SUB_LONG nl_AND TEST_MUL_LONG
 	nl_AND TEST_DIV_LONG;
 
-
-// ================================================
-// § Running the tests
-// ================================================
-0;
+TEST_AND_EX 0 0;
 
 
 // Warning: memory and time hungry (~4 GB consumed)
 let TEST_ALU = TEST_COMPARATOR nl_AND TEST_LOGICAL nl_AND TEST_ARITHMETIC;
 // WARNING: TAKES > 16 GB of RAM and if VERY LONG...
 let TEST_ALU_LONG = TEST_ALU nl_AND TEST_ARITHMETIC_LONG;
-
-// TEST_ALU;
-
-// TODO:
-// P_SQRT ?? (not yet implemented)
-// P_PROC_INIT (WTF is this ??)
-//
-// Done:
-// COMPARATOR : P_EQ, P_NEQ, P_GT, P_GEQ,
-// LOGICAL    : P_AND, P_OR, P_NOT, P_COND,
-// ARITHMETIC : P_PLUS, P_MINUS, P_TIMES, P_DIVMOD,

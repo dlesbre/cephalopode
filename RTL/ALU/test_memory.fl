@@ -1,6 +1,10 @@
 cload (DIR^"../io/io-protocol.fl");
 
 
+let NODE_INT_RANGE = "[18:13]";
+let NODE_ADDR_RANGE = "[12:3]";
+let NODE_TYPE_RANGE = "[2:0]";
+
 // ================================================
 // § Memory circuit
 // ================================================
@@ -183,9 +187,10 @@ letrec mk_ram_antecedent name steps ([])  = []
    /\  mk_ram_antecedent name steps (t:q) =
 		val (addr_value, int_value, ptr) = t in
 		let desc = sprintf "%s[%d]" name addr_value in
-			(desc^"[14:9]") is (mk_aInt int_value) for steps cycles and
-			(desc^"[8:3]")  is (mk_addr ptr)       for steps cycles and
-			(desc^"[2:0]")  is G_INT               for steps cycles and
+			(desc^"[22:19]") is "0" for steps cycles and
+			(desc^NODE_INT_RANGE)  is (mk_aInt int_value) for steps cycles and
+			(desc^NODE_ADDR_RANGE) is (mk_addr ptr)       for steps cycles and
+			(desc^NODE_TYPE_RANGE) is G_INT               for steps cycles and
 			(mk_ram_antecedent name steps q);
 
 // Returns the minimal free address in a mk_ram input (for allocation)
