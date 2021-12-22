@@ -78,7 +78,7 @@ The docker image is called "processor". It is meant to be executed in interactiv
 	- TEST_ADD, TEST_SUB, TEST_MUL, TEST_DIV and TEST_ARITHMETIC which runs them all. Running TEST_ARITHMETIC can take around 30 minutes.
 	- TEST_ALU: runs all of the above, takes less then 30 min and 16 GB of RAM
 	- TEST_ADD_LONG, TEST_SUB_LONG, TEST_MUL_LONG, TEST_DIV_LONG and TEST_ARITHMETIC_LONG. Way more hardware demanding. They take upward of 8 hours and sometime fail due to lack of RAM on my 16 GB pc.
-	- Explicit tests TEST_MUL_EX and TEST_DIV_EX, they can be run with
+	- Explicit tests TEST_ADD_EX, TEST_SUB_EX, TEST_MUL_EX and TEST_DIV_EX, they can be run with
 
 		```
 		TEST_MUL_EX 128 (-1992);
