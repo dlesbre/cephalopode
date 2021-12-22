@@ -35,6 +35,7 @@ RUN mv /home/user/src/.bashrc /home/user/.bashrc
 RUN make -C /home/user/src bifrost
 
 # Switch to user before running
+RUN chown -R user /home/user/
 USER user
-WORKDIR /home/user/
+WORKDIR /home/user/src/
 CMD bash

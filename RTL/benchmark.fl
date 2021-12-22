@@ -14,19 +14,19 @@ wtime (ckt fseq 2);
 let BENCHMARK = el 1 ARGS;
 let CYCLES = sscanf "%d" (el 2 ARGS);
 
-let ant = 
+let ant =
     (make_CR_ant ckt [("i_ram_latency", RAM_LATENCY),
 		      ("ram_latency", RAM_LATENCY),
 		      ("i_rom_latency", ROM_LATENCY)] (CYCLES cycles))
   and
     "cr[2:0]" is 0 for CYCLES cycles
   and
-    mk_ROM_ant ckt "flash" ("../compile/"^BENCHMARK)
+    mk_ROM_ant ckt "flash" (DIR^"../compile/"^BENCHMARK)
   and
     "clk" is_clock CYCLES
   and
     "reset" is 1 for 1 cycle otherwise 0 until CYCLES cycles
-;  
+;
 
 let trl = [("evaluation_done",0,CYCLES cycles),
 	    ("i1/i2/i1/fetch",0,CYCLES cycles)

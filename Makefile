@@ -4,7 +4,7 @@ BIFROST = ./bifrost
 BIFROST_EXE = $(BIFROST)/bifrost
 BIFROST_EXAMPLES = $(BIFROST)/examples
 
-CEPHALOPODE = ./RTL/cephalopode.fl
+PROCESSOR = ./RTL/cephalopode.fl
 ALU_TEST = ./RTL/ALU/ALU_test.fl
 EXAMPLES = ./compile/examples.fl
 
@@ -41,7 +41,7 @@ BIFROST_ALU_TARGETS = $(addsuffix .prog.fl, $(BIFROST_ALU_LIST))
 # Default target
 # =============================
 
-default: cephalopode
+default: processor
 
 # =============================
 # General rules
@@ -66,10 +66,15 @@ $(VERBOSE).SILENT:
 
 .PHONY: \
 	bifrost bifrost-alu bifrost-clean bifrost-examples \
-	cephalopode ALU-test \
-	compile compile-clean \
+	processor ALU-test \
+	rom-images rom-images-clean \
 	clean clean-all \
-	docker-build docker-run docker_zip
+	docker-build docker-run docker_zip \
+	benchmark1 benchmark2 benchmark3 benchmark4 benchmark5
+
+# =============================
+# Bifrost
+# =============================
 
 bifrost: $(BIFROST_EXE) ## Create the bifrost executable
 
@@ -84,16 +89,45 @@ bifrost-clean-exe: ## Remove the bifrost executable
 	echo "$(color_yellow)Deleting bifrost executable$(color_reset)"
 	-rm -f $(BIFROST_EXE)
 
-compile: ## Compiles example ROM images for cephalopode
-	echo "$(color_yellow)Building example ROM images in ./compile$(color_reset)"
-	$(FL) -noX -d -C -f $(EXAMPLES)
+# =============================
+# Benchmaks
+# =============================
 
-compile-clean: ## Remove cephalopode build files
+compile/_benchmark1.rom: rom-images
+compile/_benchmark2.rom: rom-images
+compile/_benchmark3.rom: rom-images
+compile/_benchmark4.rom: rom-images
+compile/_benchmark5.rom: rom-images
+
+rom-images: ## Create ROM images for benchmarks
+	echo "$(color_yellow)Building example ROM images in ./compile$(color_reset)"
+	$(FL) -d -C -f $(EXAMPLES)
+
+rom-images-clean: ## Remove ROM images for benchmarks
 	echo "$(color_yellow)Cleaning ccmpile build files$(color_reset)"
 	-rm -rf compile/_*.rom
 
-cephalopode: ## Run cephalopode and display reduction graph
-	$(FL) -f $(CEPHALOPODE)
+benchmark1: compile/_benchmark1.rom ## Run benchmark 1 - Sum 10 numbers using 2 chunks
+	$(FL) -f RTL/benchmark.fl _benchmark1.rom 10000
+
+benchmark2: compile/_benchmark2.rom ## Run benchmark 2 - Multiply 10 numbers using 3 chunks
+	$(FL) -f RTL/benchmark.fl _benchmark2.rom 10000
+
+benchmark3: compile/_benchmark3.rom ## Run benchmark 3 - Divide 10 numbers
+	$(FL) -f RTL/benchmark.fl _benchmark3.rom 10000
+
+benchmark4: compile/_benchmark4.rom ## Run benchmark 4 - Some factorials to compute choose
+	$(FL) -f RTL/benchmark.fl _benchmark4.rom 20000
+
+benchmark5: compile/_benchmark5.rom ## Run benchmark 5 - Crossproduct needing 5 chunks
+	$(FL) -f RTL/benchmark.fl _benchmark5.rom 2500
+
+# =============================
+# Processor and ALU
+# =============================
+
+processor: ## Run the processor on an example and display reduction graph
+	$(FL) -f $(PROCESSOR)
 
 ALU-test: ## Run the ALU test file
 	$(FL) -f $(ALU_TEST)
@@ -102,8 +136,11 @@ clean: bifrost-clean compile-clean ## Remove build files
 
 clean-all: clean bifrost-clean-exe ## Remove all generated files
 
+# =============================
+# Docker
+# =============================
 
-docker-build: clean-all ## Build the docker image
+docker-build: bifrost-clean-exe ## Build the docker image
 	echo "$(color_yellow)Building docker image$(color_reset)"
 	$(DOCKER) build -t $(DOCKER_IMG_NAME) .
 

@@ -1,28 +1,28 @@
-load "mk_rom.fl";
+load (DIR^"mk_rom.fl");
 
 // Sum 10 numbers using 2 chunks
 letrec sum c n = n = 0 => 0 | c+(sum c (n-1));
 let benchmark1 = sum 30 10;
-mk_cephalopode_rom "_benchmark1.rom" "benchmark1";
+mk_cephalopode_rom (DIR^"_benchmark1.rom") "benchmark1";
 
 // Multiply 10 numbers using 3 chunks
 letrec pow c n = n = 0 => 1 | c*(pow c (n-1));
 let benchmark2 = pow 3 10;
-mk_cephalopode_rom "_benchmark2.rom" "benchmark2";
+mk_cephalopode_rom (DIR^"_benchmark2.rom") "benchmark2";
 
 // Divide 10 numbers
 let N = 59049;
 let D = 3;
 letrec divs n = n = 1 => 1 | divs (n/D);
 let benchmark3 = divs N;
-mk_cephalopode_rom "_benchmark3.rom" "benchmark3";
+mk_cephalopode_rom (DIR^"_benchmark3.rom") "benchmark3";
 
 // Some factorials to compute choose
 let scale = 2;
 letrec fac n = n = 0 => 1 | (scale*n)* fac (n-1);
 let choose n r = fac n / (fac (n-r) * fac r);
 let benchmark4 = choose 5 2;
-mk_cephalopode_rom "_benchmark4.rom" "benchmark4";
+mk_cephalopode_rom (DIR^"_benchmark4.rom") "benchmark4";
 
 
 // Crossproduct needing 5 chunks
@@ -35,6 +35,6 @@ let N6 = 11;
 let N7 = 28;
 let N8 = 262122;
 let benchmark5 = (N1*N2+N3*N4+N5*N6+N7*N8);
-mk_cephalopode_rom "_benchmark5.rom" "benchmark5";
+mk_cephalopode_rom (DIR^"_benchmark5.rom") "benchmark5";
 
 quit;
