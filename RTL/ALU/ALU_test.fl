@@ -321,7 +321,7 @@ let ADDR_FREE  = 9;
 
 // Ram containing two arbitrary four chunk numbers
 // Use partial address for shorter number
-let init_ram steps = "ram_max_addr[5:0]" is ADDR_ALLOC for steps phases
+let init_ram steps = "ram_max_addr[9:0]" is ADDR_ALLOC for steps phases
 	// used for the divider when checking division by 0...
 	and (RAM_name^"[0][22:0]") is "0" for steps phases
 	and (ram_link steps [("1",  A3), ("2",  A2), ("3",  A1), ("4",  A0)])
@@ -756,18 +756,28 @@ let TEST_MUL_LONG = test_series [
 	test_mul 3 1 700
 ];
 
-let TEST_AND_EX a b = // test with explicit values
-	let steps = 40 in
+let TEST_ADD_EX a b = // test with explicit values
+	let steps = 1000 in
 	printf "a = %s\nb = %s\n" (sprint_number a) (sprint_number b) fseq
 	eval_test (
-		"AND_EX", T, T, [], steps, P_AND,
+		"ADD_EX", T, F, [], steps, P_PLUS,
 		mk_addr (ADDR_FREE), mk_addr (ADDR_FREE + 1), "0", "0",
 		more_ints steps [a, b],
-		and_cons (int2bv a) 0 0 (ADDR_FREE + 1) (steps-4), []
+		arith_cons (int2bv (a+b)) (steps-4), []
+);
+
+let TEST_SUB_EX a b = // test with explicit values
+	let steps = 1000 in
+	printf "a = %s\nb = %s\n" (sprint_number a) (sprint_number b) fseq
+	eval_test (
+		"SUB_EX", T, F, [], steps, P_MINUS,
+		mk_addr (ADDR_FREE), mk_addr (ADDR_FREE + 1), "0", "0",
+		more_ints steps [a, b],
+		arith_cons (int2bv (a-b)) (steps-4), []
 );
 
 let TEST_MUL_EX a b = // test with explicit values
-	let steps = 570 in
+	let steps = 1000 in
 	printf "a = %s\nb = %s\n" (sprint_number a) (sprint_number b) fseq
 	eval_test (
 		"MUL_EX", T, F, [], steps, P_TIMES,
@@ -806,9 +816,6 @@ let TEST_ARITHMETIC = TEST_ADD nl_AND TEST_SUB nl_AND TEST_MUL nl_AND TEST_DIV;
 let TEST_ARITHMETIC_LONG = TEST_ADD_LONG
 	nl_AND TEST_SUB_LONG nl_AND TEST_MUL_LONG
 	nl_AND TEST_DIV_LONG;
-
-TEST_AND_EX 0 0;
-
 
 // Warning: memory and time hungry (~4 GB consumed)
 let TEST_ALU = TEST_COMPARATOR nl_AND TEST_LOGICAL nl_AND TEST_ARITHMETIC;

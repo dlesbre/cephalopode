@@ -1,6 +1,6 @@
 // CLEANING UNIT
 // Remove unnecessary chunks at the end of an Int.
-// 
+//
 // Interface with caller
 //  bit_input   do_op.
 //  addr_input  Int_to_clean.
