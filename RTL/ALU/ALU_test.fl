@@ -530,15 +530,15 @@ let divider_cons N D addr_k step =
 	(d_is_0 == F AND ((bv_add (bv_mul quotient D) remainder) !== N)) =>
 		eprintf "Divider values fails to match !\n" |
 	"overwrite_redex" is "0" in_phase step and
-	"Q[47:0]" is (fixed_bv2list (8*INT_SZ) T quotient) in_phase step and
-	"Q_is_clean" is "1" in_phase step and
-	"Q_is_int" is "1" in_phase step and
-	"R[47:0]" is (fixed_bv2list (8*INT_SZ) T remainder) in_phase step and
-	"R_is_clean" is "1" in_phase step and
-	"R_is_int" is "1" in_phase step and
-	"redex_node[2:0]" is (IF d_is_0 THEN G_NIL_bv ELSE G_APPL_bv) in_phase step and
-	"apply_node[2:0]" is (IF d_is_0 THEN [F,F,F] ELSE G_APPL_bv) in_phase step and
-	"apply_node[8:3]" is (IF d_is_0 THEN bv_0 ELSE (list2bv (fixed_bv2list ADDR_SZ F addr_k))) in_phase step;
+	"i1/Q[47:0]" is (fixed_bv2list (8*INT_SZ) T quotient) in_phase step and
+	"i1/Q_is_clean" is "1" in_phase step and
+	"i1/Q_is_int" is "1" in_phase step and
+	"i1/R[47:0]" is (fixed_bv2list (8*INT_SZ) T remainder) in_phase step and
+	"i1/R_is_clean" is "1" in_phase step and
+	"i1/R_is_int" is "1" in_phase step and
+	("i1/redex_node"^NODE_TYPE_RANGE) is (IF d_is_0 THEN G_NIL_bv ELSE G_APPL_bv) in_phase step and
+	("i1/apply_node"^NODE_TYPE_RANGE) is (IF d_is_0 THEN [F,F,F] ELSE G_APPL_bv) in_phase step and
+	("i1/apply_node"^NODE_ADDR_RANGE) is (IF d_is_0 THEN bv_0 ELSE (list2bv (fixed_bv2list ADDR_SZ F addr_k))) in_phase step;
 
 
 // ================================================
