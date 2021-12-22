@@ -9,7 +9,7 @@ ALU_TEST = ./RTL/ALU/ALU_test.fl
 EXAMPLES = ./compile/examples.fl
 
 DOCKER = sudo docker
-DOCKER_IMG_NAME = cephalopode
+DOCKER_IMG_NAME = processor
 DOCKER_ZIP_NAME = docker_image.zip
 
 BIFROST_EXAMPLES_LIST = \
@@ -109,7 +109,7 @@ docker-build: clean-all ## Build the docker image
 
 docker-run: ## Run the docker image (requires building first)
 	echo "$(color_yellow)Running docker image$(color_reset)"
-	$(DOCKER) run --rm -it $(DOCKER_IMG_NAME) /bin/bash
+	$(DOCKER) run --rm -it -e DISPLAY=${DISPLAY} -v /tmp/.X11-unix:/tmp/.X11-unix $(DOCKER_IMG_NAME) /bin/bash
 
 docker-zip: ## Zip the docker image for export
 	echo "$(color_yellow)Zipping docker image to $(DOCKER_ZIP_NAME)$(color_reset)"

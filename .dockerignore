@@ -1,3 +1,7 @@
 # Don't copy git stuff
 .git*
+
+# Ignore docker stuff
 docker_image.zip
+Dockerfile
+.dockerignore
