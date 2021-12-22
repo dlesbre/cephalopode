@@ -10,7 +10,7 @@ EXAMPLES = ./compile/examples.fl
 
 DOCKER = sudo docker
 DOCKER_IMG_NAME = processor
-DOCKER_ZIP_NAME = docker_image.zip
+DOCKER_ZIP_NAME = docker_image.gz
 
 BIFROST_EXAMPLES_LIST = \
 	$(addprefix blockcipher/, cbc cipher_caesar sink source) \

@@ -3,5 +3,7 @@
 
 # Ignore docker stuff
 docker_image.zip
+docker_image.gz
+docker_image
 Dockerfile
 .dockerignore

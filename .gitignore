@@ -11,3 +11,8 @@ bifrost/Lang/*.y
 
 # Bifrost examples
 bifrost/examples/**/*.prog.fl
+
+# Docker image
+docker_image.zip
+docker_image.gz
+docker_image

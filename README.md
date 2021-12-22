@@ -43,7 +43,8 @@ The docker image is called "processor". It is meant to be executed in interactiv
 1. Unzip and load into docker:
 
 	```
-	gzip -d docker_image.zip | sudo docker load
+	gzip -d docker_image.gz
+	sudo docker load -i docker_image
 	```
 
 2. To run the image with acces to the X server on a linux system:
