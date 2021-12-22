@@ -1,4 +1,4 @@
-load "ste.fl";
+cload "ste.fl";
 
 TYPE "byte" 8;
 
@@ -33,18 +33,6 @@ let ckt = pexlif2fsm p;
 let vis = STE_debug ckt;
 vis;
 
-let tab_1 = draw_fanin vis (0) 100 ["o1[7:0]","o2[7:0]"];
-tab_1;
-add_waveform vis ["a[7:0]"];
-add_waveform vis ["b[7:0]"];
-add_waveform vis ["c[7:0]"];
-add_waveform vis ["o1[7:0]"];
-add_waveform vis ["o2[7:0]"];
-draw_set_time vis 2;
-draw_show_values vis tab_1 T;
-
-
-
 // STE opt vis weak_list antecedent consequent trace_list
 // opt = "-e"
 // weak_list :: (when, node, from, to)
@@ -61,31 +49,25 @@ draw_show_values vis tab_1 T;
 //
 
 let ant = 
-    "a[7:0]" is 0x01 in_cycle 0 followed_by
-		0x11 in_cycle 1 followed_by
-		0xff in_cycle 2
-  and
-    "b[7:0]" is 0x22 for 3 cycles
-  and
-    "c[7:0]" is 0x33 for 3 cycles
+    "a[7:0]" isv "0x01" from 0 to 2 and
+    "a[7:0]" isv "0x11" from 2 to 3 and
+    "a[7:0]" isv "0xff" from 3 to 5 and
+    "b[7:0]" isv "0x22" from 0 to 5 and
+    "c[7:0]" isv "0x33" from 0 to 5
 ;
 
-
-let run1 = STE "-e" vis [] ant [] [];
+STE "-e" vis [] ant [] [];
 
 
 
 let ant = 
-    "a[7:0]" is "A1[7:0]" in_cycle 0 followed_by
-		"c[7:0]" in_cycle 1 followed_by
-		0xff in_cycle 2
-  and
-    "b[7:0]" is 0x0 for 3 cycles
-  and
-    "c[7:0]" is "A1[7:0]" for 3 cycles
+    "a[7:0]" isv "A1[7:0]" from 0 to 2 and
+    "a[7:0]" isv "c[7:0]" from 2 to 3 and
+    "a[7:0]" isv "0xff" from 3 to 5 and
+    "b[7:0]" isv "0x0" from 0 to 5 and
+    "c[7:0]" isv "A1[7:0]" from 0 to 5
 ;
 
-let run2 = STE "-e" vis [] ant [] [];
+STE "-e" vis [] ant [] [];
 
-// Evaluate run1, look at the values
-// Evaluate run2, and see how some of the values have become symbolic.
+

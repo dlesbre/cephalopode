@@ -93,7 +93,26 @@ let cephalopode =
 		empty_stack
 ];
 
+letrec compile pexlif_file dep_files pexlif_expr =
+    let get_mtime f = sscanf "%d" (tcl_eval [sprintf "file mtime %s" f]) then
+    let exists = file_exists pexlif_file then
+    let latest_change = itlist (\f.\r. max (get_mtime f) r) dep_files 0 in
+    exists AND (latest_change < (get_mtime pexlif_file)) =>
+        // Load from file
+        read_pexlif pexlif_file
+    |
+	let p = pexlif_expr then
+	(write_pexlif pexlif_file p) fseq
+	p
+;
+pcompile cephalopode;
+
+
+//let p = compile "core_cephalopode.pexlif" (get_cloaded_files ())
+//		(cephalopode 'clk 'reset 'cr 'between_jobs 'evaluation_done)
+//;
+
 let p = cephalopode 'clk 'reset 'cr 'between_jobs 'evaluation_done;
 
-printf "Compiling the processor model....\n";
 wtime (p fseq 1);
+

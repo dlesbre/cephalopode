@@ -1,0 +1,47 @@
+(update_vossrc "RECURSION-CALL-LIMIT" "30000") fseq ();
+(update_vossrc "PRINT-TIME" "YES") fseq ();
+(update_vossrc "PRINT-TIME-MOD" "100") fseq ();
+
+length ARGS == 2 => () |
+    error "Usage: fl -noX -f benchmark.fl <rom_file> <maxcycles>"
+;
+
+load (DIR^"core_cephalopode.fl");
+
+let ckt = pexlif2fsm p;
+wtime (ckt fseq 2);
+
+let BENCHMARK = el 1 ARGS;
+let CYCLES = sscanf "%d" (el 2 ARGS);
+
+let ant = 
+    (make_CR_ant ckt [("i_ram_latency", RAM_LATENCY),
+		      ("ram_latency", RAM_LATENCY),
+		      ("i_rom_latency", ROM_LATENCY)] (CYCLES cycles))
+  and
+    "cr[2:0]" is 0 for CYCLES cycles
+  and
+    mk_ROM_ant ckt "flash" ("../compile/"^BENCHMARK)
+  and
+    "clk" is_clock CYCLES
+  and
+    "reset" is 1 for 1 cycle otherwise 0 until CYCLES cycles
+;  
+
+let trl = [("evaluation_done",0,CYCLES cycles),
+	    ("i1/i2/i1/fetch",0,CYCLES cycles)
+];
+
+let ste = STE "" ckt [] ant [] trl;
+ste;
+
+val (start_phase,Hs,Ls) = hd (lastn 3 (get_trace ste "i1/i2/i1/fetch"));
+val (end_phase,He,Le) = hd (lastn 2 (get_trace ste "evaluation_done"));
+
+(Ls == F) AND (Ls == F) AND (He == T) AND (Le == F) =>
+    (fprintf stdout "Computation takes %d cycles\n" ((end_phase-start_phase)/2))
+|
+    error "Did not complete"
+;
+
+quit;

@@ -2,7 +2,7 @@
 // Four-phase handshake
 // Output address not managed here
 
-load "ste.fl",
+cload "ste.fl",
 cload (DIR^"../types.fl");
 
 // SIGNALS:

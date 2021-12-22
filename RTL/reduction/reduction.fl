@@ -329,3 +329,4 @@ let reduction_unit =
             prim_result_allocs
         );
 
+pcompile reduction_unit;

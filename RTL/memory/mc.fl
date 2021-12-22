@@ -155,6 +155,7 @@ let mc =
 	    is_RD istate '&' m_rw_ack '&' is_indir --- ram_data_from_mem-->laddr
 	]
 ];
+pcompile mc;
 
 ENUM "merge_fsm" ["IDLE", "R_ACTIVE", "A_ACTIVE"];
 
@@ -306,6 +307,7 @@ let MEM_CTRL =
 		ram_addr ram_rw ram_data_from_mem ram_data_to_mem
 		rom_addr rom_data_from_mem
 ];
+pcompile MEM_CTRL;
 
 
 //let p = MEM_CTRL 'clk 'reset 'cr 'ready 'entry_point

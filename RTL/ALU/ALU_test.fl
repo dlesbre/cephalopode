@@ -166,7 +166,8 @@ let linked_integer_reader =
 		is_int_1 <- (node_1-->type '=' G_INT) '&' (stop_2 '|' is_int_2),
 		is_int_0 <- (node_0-->type '=' G_INT) '&' (stop_1 '|' is_int_1),
 		value_is_int <- stop_0 '|' is_int_0
-	];
+];
+pcompile linked_integer_reader;
 
 // block plugging the ALU into our fake memory
 // Inputs:
@@ -228,6 +229,7 @@ let ALU_tester =
 		linked_integer_reader (redex_node-->raddr) ram R R_is_clean R_is_int,
 		linked_integer_reader (apply_node-->raddr) ram Q Q_is_clean Q_is_int
 	];
+pcompile ALU_tester;
 
 let ALU_tester_pexlif = ALU_tester 'clk 'set_memory 'ram_in 'ram_max_addr
 	'reset 'op_req 'op_type
@@ -389,10 +391,10 @@ let eval_test (
 	let test_result = (get_ste_result ste_result "strong") == T in
 	let test_duration = last_high ste_result "op_ack" in
 	(verbose)
-		=> printf "TEST_%-17s : %6s in %d cycles\n"
+		=> printf "TEST_%-17s : %6s in %d steps\n"
 				name
 				(test_result => "OK" | "FAILED")
-				(test_duration / 2) // Use clock cycles and not phases
+				test_duration
 			fseq test_result
 		|  test_result;
 
@@ -549,7 +551,7 @@ let divider_cons N D addr_k step =
 let eq_cons a b _ _ steps = boolean_cons (bv_eq a b) steps;
 let test_eq = test_factory "EQ" P_EQ eq_cons;
 
-clet TEST_EQ = test_series [
+let TEST_EQ = test_series [
 	test_eq 1 1 40,
 	test_eq 1 2 40,
 	test_eq 2 1 40,
@@ -565,7 +567,7 @@ clet TEST_EQ = test_series [
 let neq_cons a b _ _ steps = boolean_cons (bv_neq a b) steps;
 let test_neq = test_factory "NEQ" P_NEQ neq_cons;
 
-clet TEST_NEQ = test_series [
+let TEST_NEQ = test_series [
 	test_neq 1 1 40,
 	test_neq 1 2 40,
 	test_neq 2 1 40,
@@ -581,7 +583,7 @@ clet TEST_NEQ = test_series [
 let gt_cons a b _ _ steps = boolean_cons (bv_greater a b) steps;
 let test_gt = test_factory "GT" P_GT gt_cons;
 
-clet TEST_GT = test_series [
+let TEST_GT = test_series [
 	test_gt 1 1 60,
 	test_gt 1 2 60,
 	test_gt 2 1 60,
@@ -597,7 +599,7 @@ clet TEST_GT = test_series [
 let geq_cons a b _ _ steps = boolean_cons (bv_geq a b) steps;
 let test_geq = test_factory "GEQ" P_GEQ geq_cons;
 
-clet TEST_GEQ = test_series [
+let TEST_GEQ = test_series [
 	test_geq 1 1 60,
 	test_geq 1 2 60,
 	test_geq 2 1 60,
@@ -610,7 +612,7 @@ clet TEST_GEQ = test_series [
 ];
 
 
-clet TEST_COMPARATOR = TEST_EQ nl_AND TEST_NEQ nl_AND TEST_GT nl_AND TEST_GEQ;
+let TEST_COMPARATOR = TEST_EQ nl_AND TEST_NEQ nl_AND TEST_GT nl_AND TEST_GEQ;
 
 
 // ================================================
@@ -623,7 +625,7 @@ clet TEST_COMPARATOR = TEST_EQ nl_AND TEST_NEQ nl_AND TEST_GT nl_AND TEST_GEQ;
 let not_cons a _ _ _ steps = boolean_cons (bv_eq a bv_0) steps;
 let test_not = test_factory "NOT" P_NOT not_cons;
 
-clet TEST_NOT = test_series [
+let TEST_NOT = test_series [
 	test_not 1 0 40,
 	test_not 2 0 40,
 	test_not 3 0 40
@@ -635,7 +637,7 @@ clet TEST_NOT = test_series [
 let and_cons a _ _ addr_b steps = mixed_cons (bv_eq a bv_0) bv_0 (int2bv addr_b) steps;
 let test_and = test_factory "AND" P_AND and_cons;
 
-clet TEST_AND = test_series [
+let TEST_AND = test_series [
 	test_and 1 1 40,
 	test_and 2 1 40,
 	test_and 1 2 40,
@@ -652,7 +654,7 @@ clet TEST_AND = test_series [
 let or_cons a _ _ addr_b steps = mixed_cons (bv_neq a bv_0) bv_1 (int2bv addr_b) steps;
 let test_or = test_factory "OR" P_OR or_cons;
 
-clet TEST_OR = test_series [
+let TEST_OR = test_series [
 	test_or 1 1 40,
 	test_or 2 1 40,
 	test_or 1 2 40,
@@ -670,14 +672,14 @@ let cond_cons a _ addr_a addr_b steps =
 	indir_cons (IF (bv_neq a bv_0) THEN (int2bv addr_b) ELSE (int2bv addr_a)) steps;
 let test_cond = test_factory "COND" P_COND cond_cons;
 
-clet TEST_COND = test_series [
+let TEST_COND = test_series [
 	test_cond 1 1 40,
 	test_cond 2 1 40,
 	test_cond 3 2 40
 ];
 
 
-clet TEST_LOGICAL = TEST_NOT nl_AND TEST_AND nl_AND TEST_OR nl_AND TEST_COND;
+let TEST_LOGICAL = TEST_NOT nl_AND TEST_AND nl_AND TEST_OR nl_AND TEST_COND;
 
 
 // ================================================
@@ -690,7 +692,7 @@ clet TEST_LOGICAL = TEST_NOT nl_AND TEST_AND nl_AND TEST_OR nl_AND TEST_COND;
 let add_cons a b _ _ steps = arith_cons (bv_add a b) steps;
 let test_add = test_factory "ADD" P_PLUS add_cons;
 
-clet TEST_ADD = test_series [
+let TEST_ADD = test_series [
 	test_add 1 1 150,
 	test_add 1 2 160,
 	test_add 2 1 160,
@@ -699,7 +701,7 @@ clet TEST_ADD = test_series [
 	test_add 3 1 300
 ];
 
-clet TEST_ADD_LONG = test_series [
+let TEST_ADD_LONG = test_series [
 	test_add 3 2 400,
 	test_add 2 3 400,
 	test_add 3 3 400
@@ -710,7 +712,7 @@ clet TEST_ADD_LONG = test_series [
 let sub_cons a b _ _ steps = arith_cons (bv_sub a b) steps;
 let test_sub = test_factory "SUB" P_MINUS sub_cons;
 
-clet TEST_SUB = test_series [
+let TEST_SUB = test_series [
 	test_sub 1 1 150,
 	test_sub 1 2 160,
 	test_sub 2 1 160,
@@ -719,7 +721,7 @@ clet TEST_SUB = test_series [
 	test_sub 3 1 300
 ];
 
-clet TEST_SUB_LONG = test_series [
+let TEST_SUB_LONG = test_series [
 	test_sub 3 2 400,
 	test_sub 2 3 400,
 	test_sub 3 3 400
@@ -742,13 +744,13 @@ clet TEST_SUB_LONG = test_series [
 let mul_cons a b _ _ steps = arith_cons (bv_mul a b) steps;
 let test_mul = test_factory "MUL" P_TIMES mul_cons;
 
-clet TEST_MUL = test_series [
+let TEST_MUL = test_series [
 	test_mul 1 1 150,
 	test_mul 1 2 500,
 	test_mul 2 1 500
 ];
 
-clet TEST_MUL_LONG = test_series [
+let TEST_MUL_LONG = test_series [
 	test_mul 2 2 700,
 	test_mul 1 3 700,
 	test_mul 3 1 700
@@ -770,12 +772,12 @@ let TEST_MUL_EX a b = // text with explicit values
 let div_cons a b addr_a _ steps = divider_cons b a (int2bv addr_a) steps;
 let test_div = test_factory "DIV" P_DIVMOD div_cons;
 
-clet TEST_DIV = test_series [
+let TEST_DIV = test_series [
 	test_div 1 1 200,
 	test_div 1 2 500,
 	test_div 2 1 1500
 ];
-clet TEST_DIV_LONG = test_series [
+let TEST_DIV_LONG = test_series [
 	test_div 2 2 2500 // Warning; patience required here. It passed though
 ];
 
@@ -790,8 +792,8 @@ let TEST_DIV_EX a b = // text with explicit values
 );
 
 
-clet TEST_ARITHMETIC = TEST_ADD nl_AND TEST_SUB nl_AND TEST_MUL nl_AND TEST_DIV;
-clet TEST_ARITHMETIC_LONG = TEST_ADD_LONG
+let TEST_ARITHMETIC = TEST_ADD nl_AND TEST_SUB nl_AND TEST_MUL nl_AND TEST_DIV;
+let TEST_ARITHMETIC_LONG = TEST_ADD_LONG
 	nl_AND TEST_SUB_LONG nl_AND TEST_MUL_LONG
 	nl_AND TEST_DIV_LONG;
 
@@ -803,8 +805,17 @@ clet TEST_ARITHMETIC_LONG = TEST_ADD_LONG
 
 
 // Warning: memory and time hungry (~4 GB consumed)
-clet TEST_ALU = TEST_COMPARATOR nl_AND TEST_LOGICAL nl_AND TEST_ARITHMETIC;
+let TEST_ALU = TEST_COMPARATOR nl_AND TEST_LOGICAL nl_AND TEST_ARITHMETIC;
 // WARNING: TAKES > 16 GB of RAM and if VERY LONG...
-clet TEST_ALU_LONG = TEST_ALU nl_AND TEST_ARITHMETIC_LONG;
+let TEST_ALU_LONG = TEST_ALU nl_AND TEST_ARITHMETIC_LONG;
 
 // TEST_ALU;
+
+// TODO:
+// P_SQRT ?? (not yet implemented)
+// P_PROC_INIT (WTF is this ??)
+//
+// Done:
+// COMPARATOR : P_EQ, P_NEQ, P_GT, P_GEQ,
+// LOGICAL    : P_AND, P_OR, P_NOT, P_COND,
+// ARITHMETIC : P_PLUS, P_MINUS, P_TIMES, P_DIVMOD,

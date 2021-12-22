@@ -5,7 +5,7 @@ cload "ste.fl";
 //let INT_SZ  = 32;
 //let NODES = 2**8;
 //let NODES = 2**6;
-let NODES = 2**6;
+let NODES = 2**10;
 let INT_SZ  = 6;
 
 let ADDR_SZ = bits_needed (NODES-1);
@@ -71,11 +71,15 @@ let mk_eaddr addr =
 // TYPE -- Int -- Integer
 TYPE "simple_Int" INT_SZ;
 
+11111;
+
 STRUCT "Int" INT_SZ [
     ("simple_Int", "simple_Int", (INT_SZ-1 -- 0)),
     ("msb",        "bit",        [INT_SZ-1]),
     ("lsb",        "bit",        [0])
 ];
+
+22222;
 
 let Int_zero    = {'0::Int};
 let Int_one     = {'1::Int};

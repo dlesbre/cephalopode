@@ -54,6 +54,7 @@ let clean_io =
         did_write <- (write_out-->done)
     ]
 ;
+pcompile clean_io;
 
 let p_io   = clean_io 'clk 'reset 'do_read 'addr_to_read 'did_read 'data_read 'do_write 'addr_to_write 'data_to_write 'did_write 'sig_in 'sig_out;
 let ckt_io = pexlif2fsm p_io;
@@ -95,7 +96,7 @@ let clean_brain =
         re_ff clk do_update did_update
     ]
 ;
-
+pcompile clean_brain;
 let p_brain   = clean_brain 'clk 'reset 'do_update 'did_update 'candidate_addr 'candidate 'lri_addr 'lri 'do_update_fe 'is_rec;
 let ckt_brain = pexlif2fsm p_brain;
 let v_brain   = STE_debug ckt_brain;
@@ -119,7 +120,7 @@ let clean_addr =
         addr_to_write <- lri_addr
     ]
 ;
-
+pcompile clean_addr;
 let clean =
     bit_input   clk reset.
     // Caller
@@ -161,7 +162,7 @@ let clean =
         data_to_write <- node_Int_zero<--int ? lri
     ]
 ;
-
+pcompile clean;
 let p_clean   = clean 'clk 'reset 'do_op 'target 'did_op 'sig_in 'sig_out;
 let ckt_clean = pexlif2fsm p_clean;
 let v_clean   = STE_debug ckt_clean;

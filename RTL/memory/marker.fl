@@ -135,6 +135,7 @@ let marker =
 	already_marked_internal <- nm_int-->mark,
 	mark_done <- is_MRK_IDLE mstate
 ];
+pcompile marker;
 
 //let p = marker 'clk 'reset 'root 'do_mark 'mark_done 'mark_req 'mark_addr
 //	       'mark_ack 'already_marked 'nd;

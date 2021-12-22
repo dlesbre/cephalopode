@@ -1,6 +1,6 @@
 // Tools used by the arithmetic operations
 
-load "ste.fl";
+cload "ste.fl";
 cload (DIR^"../io/io-protocol.fl");
 
 // Opcode

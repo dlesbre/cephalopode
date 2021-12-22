@@ -1,4 +1,4 @@
-load "ste.fl";
+cload "ste.fl";
 
 ENUM "four_phase" ["IDLE", "REQ", "ACK", "DONE"];
 let rd_protocol_ifc =

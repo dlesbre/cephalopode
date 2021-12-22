@@ -192,6 +192,7 @@ let ALU =
             s_op_req    --- s_sig_out
         ] '0
 ];
+pcompile ALU;
 
 let p = ALU 'clk 'reset
 	    'op_req 'op_type
@@ -202,9 +203,6 @@ let p = ALU 'clk 'reset
 ;
 
 
-
-
 let ckt = pexlif2fsm p;
-
 
 let v = STE_debug ckt;

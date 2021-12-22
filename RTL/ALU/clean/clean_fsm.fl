@@ -55,4 +55,4 @@ let clean_manager =
         , do_update <- (((is_clean_manager__READ state) '&' did_read) '|' (is_clean_manager__WAIT_UPDATE state))
         , did_op <- (is_clean_manager__DONE state)
         ];
-
+pcompile clean_manager;

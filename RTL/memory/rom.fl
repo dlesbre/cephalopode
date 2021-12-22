@@ -25,7 +25,7 @@ let convert_line_to_node line =
     {frombits (map s2bit (butlast (explode line))):: node}
 ;
 
-clet mk_ROM_ant ckt name file =
+let mk_ROM_ant ckt name file =
     let fp = fopen file "r" then
     (
 	let vecs = vectors ckt in

@@ -260,7 +260,7 @@ let ith_bit n i = (n / 2**i) % 2; // I can't find bitwise and...
 let TOP_BIT_POS = INT_SZ - 1;
 
 // size of integer chunks used
-clet chunk_size = 2**INT_SZ;
+let chunk_size = 2**INT_SZ;
 
 // sets the sign of a number according to its depth (number of chunks)
 let set_sign number depth =

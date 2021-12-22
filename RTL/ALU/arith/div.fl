@@ -42,3 +42,4 @@ let divider_main =
 			alloc_addr read_node
 			sig_in sig_out
 	];
+pcompile divider_main;

@@ -68,6 +68,7 @@ let arith_manager =
         op_ack <- is_DONE step
     ]
 ;
+pcompile arith_manager;
 
 let p_manager   = arith_manager 'clk 'reset 'op_req 'op_type 'op_ack 'addsub_done 'mul_done 'divmod_done 'clean_done 'zero_division_error 'now_module 'twist;
 
@@ -176,6 +177,7 @@ let arith =
             clean_sig_in clean_sig_out
     ]
 ;
+pcompile arith; 
 
 let p   = arith 'clk 'reset 'op_req 'op_type_in 'op_in_in 'op_ack 'sig_in 'sig_out;
 

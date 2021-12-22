@@ -118,6 +118,7 @@ let Initiator =
 	done <- is_I_DONE state
 ];
 
+pcompile Initiator;
 
 //let p = Initiator 'clk 'reset 'cr
 //		  'rom_addr 'rom_data

@@ -27,8 +27,9 @@ let core_gc_fsm =
 	free <- is_NGC_FREE ngc_state,
 	is_marked <- mark '&' is_NGC_LIVE ngc_state
 ];
+pcompile core_gc_fsm;
 
-clet gc_fsm clk reset snap sweep mark alloc ngc_state free is_marked =
+let gc_fsm clk reset snap sweep mark alloc ngc_state free is_marked =
     (fprintf stderr "Make gc_fsm\n") fseq
     (core_gc_fsm clk reset snap sweep mark alloc ngc_state free is_marked)
 ;
@@ -58,6 +59,7 @@ let gc_slice_new =
 	free <- o_free,
 	is_marked <- o_is_marked
 ];
+pcompile gc_slice_new;
 
 let gc_slice =
     bit_input		    clk.
@@ -83,6 +85,7 @@ let gc_slice =
 	free <- is_NGC_FREE ngc_state,
 	is_marked <- mark '&' is_NGC_LIVE ngc_state
 ];
+pcompile gc_slice;
 
 letrec cnt_free =
     bit_list_input  inp_l.
@@ -122,7 +125,6 @@ letrec find_first_free =
 	    addr <- (IF bot_valid THEN bot_addr ELSE (high_addr '|' top_addr))
 	]
 );
-
 
 letrec map5 fn (a:as) (b:bs) (c:cs) (d:ds) (e:es) =
 	    (fn a b c d e):(map5 fn as bs cs ds es)
@@ -171,6 +173,7 @@ let allocator =
 	already_marked <- (accumulate (defix '|') is_marked_l),
 	cnt_free is_free_l nbr_free
 ];
+pcompile allocator;
 
 
 //let v = STE_debug (pexlif2fsm (allocator 'clk 'reset 'snap 'sweep

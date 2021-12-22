@@ -59,6 +59,7 @@ let addsub_s_manager =
         ] 'X
     ]
 ;
+pcompile addsub_s_manager;
 
 let addsub_mode_manager =
     op_process_input step.
@@ -93,6 +94,7 @@ let addsub_mode_manager =
         ] 'X
     ]
 ;
+pcompile addsub_mode_manager;
 
 let addsub_manager =
     bit_input             clk reset do_op.
@@ -156,6 +158,7 @@ let addsub_manager =
         addsub_mode_manager step mode
     ]
 ;
+pcompile addsub_manager;
 
 //STE_debug (pexlif2fsm (add_manager 'clk 'reset 'do_op 'read_a_done 'read_b_done 'write_res_done 'alloc_done 'a_end 'b_end 'a_pos 'b_pos 'rect 'carry 'step 'sstep));
 
@@ -223,7 +226,7 @@ let io =
                      <--addr  ? addr_out
     ]
 ;
-
+pcompile io;
 //let p_io = io 'clk 'step 'a_addr 'b_addr 'res_addr 'node_out 'read_a 'read_b 'write 'alloc' 'sig_in 'sig_out;
 //let ckt_io = pexlif2fsm p_io;
 //let v_io = STE_debug ckt_io;
@@ -288,7 +291,7 @@ let compute =
         revB <- B '^' Int_neg_one
     ]
 ;
-
+pcompile compute;
 let p_compute = compute 'clk 'ap 'bp 'pcy 'add 'A 'B 'ss 'md 'cy 'r 'lr;
 let ckt_compute = pexlif2fsm p_compute;
 let v_compute = STE_debug ckt_compute;
@@ -322,7 +325,7 @@ let address_manager =
             ELSE op-->dest)
     ]
 ;
-
+pcompile address_manager;
 
 //////////////////
 // CONTROL BITS //
@@ -360,7 +363,7 @@ let control =
             prev_carry
     ]
 ;
-
+pcompile control;
 let p_control = control 'clk 'is_add 'rad 'rbd 'wd 'sstep 'a 'b 'rm 'cy 'ae 'be 'ap 'bp 'rt 'isr 'pcy;
 let ckt_control = pexlif2fsm p_control;
 let v_control = STE_debug ckt_control;
@@ -444,6 +447,7 @@ let addsub =
         debug_useless <- '0
     ]
 ;
+pcompile addsub;
 
 let p_add = addsub 'clk 'reset 'do_op 'in_is_add 'op_in 'add_done 'sig_in 'sig_out;
 let ckt_add = pexlif2fsm p_add;
@@ -532,6 +536,7 @@ let dummy_io =
         ] 'X
     ]
 ;
+pcompile dummy_io;
 
 let split_signal =
     signal_input sig.

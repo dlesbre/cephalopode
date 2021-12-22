@@ -34,6 +34,7 @@ let snapshot_slice =
 		  ( (want_snap '&' next_which_snap) '|'
 		    (('~' want_snap) '&' next_which_live) )
 ];
+pcompile snapshot_slice;
 
 //let snapshot_slice =
 //    bit_input	    clk.
@@ -77,6 +78,7 @@ let snapshot_group =
 	EN_DECODER_list do_op addr_in enable_l,
 	msb <- (accumulate (defix '|') which_l)
 ]);
+pcompile snapshot_group;
 
 ENUM "snapshot_mode" ["NORMAL", "SNAPSHOT_MODE"];
 
@@ -105,6 +107,7 @@ let snapshot_mgr =
 	snapshot_write <- is_SNAPSHOT_MODE mode '&' '~' rw,
 	addr_out <- addr2eaddr msb addr_in
 ];
+pcompile snapshot_mgr;
 
 //let v = STE_debug (pexlif2fsm (snapshot_mgr 'clk 'reset
 //					    'want_snapshot 'take_snapshot

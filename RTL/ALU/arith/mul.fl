@@ -38,3 +38,4 @@ let muliplier_main =
 			alloc_addr read_node
 			sig_in sig_out
 	];
+pcompile muliplier_main;
