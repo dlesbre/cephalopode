@@ -93,15 +93,11 @@ bifrost-clean-exe: ## Remove the bifrost executable
 # Benchmaks
 # =============================
 
-compile/_benchmark1.rom: rom-images
-compile/_benchmark2.rom: rom-images
-compile/_benchmark3.rom: rom-images
-compile/_benchmark4.rom: rom-images
-compile/_benchmark5.rom: rom-images
-
-rom-images: ## Create ROM images for benchmarks
+compile/_benchmark%.rom:
 	echo "$(color_yellow)Building example ROM images in ./compile$(color_reset)"
 	$(FL) -d -C -f $(EXAMPLES)
+
+rom-images: compile/_benchmark1.rom ## Create ROM images for benchmarks
 
 rom-images-clean: ## Remove ROM images for benchmarks
 	echo "$(color_yellow)Cleaning ccmpile build files$(color_reset)"
