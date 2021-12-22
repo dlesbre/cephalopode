@@ -23,8 +23,8 @@ This repository also contains the Bifröst compiler, a high-level synthesis tool
 This repository is organized as follows:
 - `bifrost/` - source for the Bifröst compiler, can be built with `make bifrost`
 - `bifrost/examples/` - small code examples in Bifröst, can be compiled to FL with `make bifrost-examples`
-- `RTL/` - an RTL description of the IoTProc processor written in HFL. A fast example can be run by loading the `cephalopode.fl` main file. (run `make cephalopode`)
-- `RTL/ALU/` - the IoTProc ALU, performs operations on arbitrary-precision integers. It contains some parts in Stately (`.fsm` files), some in Bifröst (`.prog` files) as well as their compiled FL code (corresponding `.fsm.fl` and `.prog.fl`)
+- `RTL/` - an RTL description of the IoTProc processor written in HFL. A fast example can be run by loading the `cephalopode.fl` main file. (run `make processor`)
+- `RTL/ALU/` - the IoTProc ALU, performs operations on arbitrary-precision integers. It contains some parts in state machine editor FsM (`.fsm` files), some in Bifröst (`.prog` files) as well as their compiled FL code (corresponding `.fsm.fl` and `.prog.fl`)
 
 	You can run `make ALU-test` to load the ALU test suite (`RTL/ALU/ALU_test.fl`) then evaluate the relevant test in the interpretor (for instance `TEST_ADD;`). Beware that some of these can be very long.
 
