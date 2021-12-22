@@ -11,10 +11,12 @@ This repository also contains the Bifröst compiler, a high-level synthesis tool
 
 **Contents:**
 - [Repository description](#repository-description)
-- [Dependencies and installation](#dependencies-and-installation)
+- [Running with Docker](#running-with-docker)
+- [Makefile targets](#makefile-targets)
+- [Manual installation](#manual-installation)
 	- [Bifröst](#bifröst)
-	- [Cephalopode](#cephalopode)
-- [References](#references)
+	- [IoTProc](#iotproc)
+- [Building docker](#building-docker)
 
 ## Repository description
 
@@ -31,7 +33,68 @@ This repository is organized as follows:
 - `compile/` - tools to create ROM images for IoTProc
 - `Makefile` - see `make help` for a list of targets
 
-## Dependencies and installation
+
+## Running with Docker
+
+You can download a docker image from the releases. It allows to run bifröst and the processor easily with all dependencies included.
+
+The docker image is called "processor". It is meant to be executed in interactive mode with acces to an X server for the GUI elements. In order to do so:
+
+1. Unzip and load into docker:
+
+	```
+	gzip -d docker_image.zip | sudo docker load
+	```
+
+2. To run the image with acces to the X server on a linux system:
+
+	```
+	sudo docker run --rm -it -e DISPLAY=:0 -v /tmp/.X11-unix:/tmp/.X11-unix processor /bin/bash
+	```
+	It can be run without the X-server with (but fl will not work then):
+	```
+	sudo docker run --rm -it processor /bin/bash
+	```
+	This opens a bash shell on a small debian system. For other systems, the best I can do is point you to [this tutorial](https://cuneyt.aliustaoglu.biz/en/running-gui-applications-in-docker-on-windows-linux-mac-hosts/) which helped me set it up in linux.
+
+3. The X server may require authentification. To allow docker to authenticate, run `xauth list` on your system, copy the first line and then run `xauth add <first line here>` in the docker shell.
+
+4. You are now logged in as user "user" who has sudo priviledges with password "password". User's home folder contains our souce code under `src`. The makefile in `~/src` can be used to quickly launch all our programs. See `make help` for a full list of targets, or below for specific targets.
+
+	For convenience, we added the fl interpretor and bifrost compiler to the path. They can be accessed with `fl` and `bifrost`. Note that `fl` requires a connection to the X-server.
+
+## Makefile targets
+
+**For bifrost:**
+* The examples can be compiled with `make bifrost-examples`. The generated files are the same name `.prog.fl` files.
+* The multiplier and divider can be compiled with `make bifrost-alu`. Th
+* Bifrost is precompiled, but can be recompiled from the Haskell source with `make bifrost-clean-exe bifrost`.
+
+**For the ALU:** the small tests are fine but arithmetic test can take a >1h and a >16GB of RAM when running on more than (1,1) chunks. To run the ALU tests:
+1. Run `make ALU-test`. This will open and fl window and define (but not run) the test
+2. To run a test, simply type `TEST_NAME;` in the fl interpretor. Defined tests are
+	- TEST_EQ, TEST_NEQ, TEST_GT, TEST_GEQ and TEST_COMPARATOR which runs them all. These take less than a minute each.
+	- TEST_NOT, TEST_AND, TEST_OR, TEST_COND and TEST_LOGICAL which runs them all. These take less than a minute each.
+	- TEST_ADD, TEST_SUB, TEST_MUL, TEST_DIV and TEST_ARITHMETIC which runs them all. Running TEST_ARITHMETIC can take around 30 minutes.
+	- TEST_ALU: runs all of the above, takes less then 30 min and 16 GB of RAM
+	- TEST_ADD_LONG, TEST_SUB_LONG, TEST_MUL_LONG, TEST_DIV_LONG and TEST_ARITHMETIC_LONG. Way more hardware demanding. They take upward of 8 hours and sometime fail due to lack of RAM on my 16 GB pc.
+	- Explicit tests TEST_MUL_EX and TEST_DIV_EX, they can be run with
+
+		```
+		TEST_MUL_EX 128 (-1992);
+		```
+
+		They are much faster than the symbolic evaluation ones. They print the chunk representation of the operands before running.
+
+**For benchmarks:**
+- run `make benchmark1` to run the first benchmark (Adding 10 numbers using 2-chunks). It ends at Time: 20000.
+- run `make benchmark2` to run the second benchmark (Multiplying 10 numbers using 3-chunks). It ends at Time: 20000.
+- run `make benchmark3` to run the third benchmark (Dividing 10 numbers using 2-chunks). It ends at Time: 20000.
+- run `make benchmark4` to run the fourth benchmark (Collection of factorials needing 3 chunks). It ends at Time: 40000.
+- run `make benchmark5` to run the fifth benchmark (Crossproduct of 4 pairs using 5 chunks). It ends at Time: 5000.
+
+
+## Manual installation
 
 ### Bifröst
 
@@ -100,4 +163,9 @@ An optionnal dependency is [Stately](https://github.com/popje-chalmers/stately),
 
 	And use the interface to navigate to the `.fsm` files.
 
+## Building docker
 
+You can build the docker image given in the release page from this source code:
+- run `make docker-build` to create the image (can take a while)
+- run `make docker-run` to run it
+- run `make docker-zip` to export it and compress it with gzip
