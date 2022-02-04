@@ -50,7 +50,10 @@ The docker image is called "processor". It is meant to be executed in interactiv
 2. To run the image with acces to the X server on a linux system:
 
 	```
-	sudo docker run --rm -it -e DISPLAY=:0 -v /tmp/.X11-unix:/tmp/.X11-unix processor /bin/bash
+	sudo docker run --rm -it -e DISPLAY=:0 \
+	     -v /tmp/.X11-unix:/tmp/.X11-unix \
+			 -v "$(HOME)/.Xauthority:/home/user/.Xauthority" \
+			 processor /bin/bash
 	```
 	It can be run without the X-server with (but fl will not work then):
 	```
@@ -58,9 +61,9 @@ The docker image is called "processor". It is meant to be executed in interactiv
 	```
 	This opens a bash shell on a small debian system. For other systems, the best I can do is point you to [this tutorial](https://cuneyt.aliustaoglu.biz/en/running-gui-applications-in-docker-on-windows-linux-mac-hosts/) which helped me set it up in linux.
 
-3. The X server may require authentification. To allow docker to authenticate, run `xauth list` on your system, copy the first line and then run `xauth add <first line here>` in the docker shell.
+	If running on a remote system, [this other tutorial](https://blog.yadutaf.fr/2017/09/10/running-a-graphical-app-in-a-docker-container-on-a-remote-server/) may help set it up
 
-4. You are now logged in as user "user" who has sudo priviledges with password "password". User's home folder contains our souce code under `src`. The makefile in `~/src` can be used to quickly launch all our programs. See `make help` for a full list of targets, or below for specific targets.
+3. You are now logged in as user "user" who has sudo priviledges with password "password". User's home folder contains our souce code under `src`. The makefile in `~/src` can be used to quickly launch all our programs. See `make help` for a full list of targets, or below for specific targets.
 
 	For convenience, we added the fl interpretor and bifrost compiler to the path. They can be accessed with `fl` and `bifrost`. Note that `fl` requires a connection to the X-server.
 
@@ -130,10 +133,8 @@ Building and running IoTProc requires [Voss II](https://github.com/TeamVoss/Voss
 
 	```
 	cd Voss II
-	make -C src install
+	make -C src install_all_but_yosys
 	```
-
-	The makefile may fail when building yosys. This doesn't really matter as we don't use yosys in cephalopode.
 
 4. You can check your install by running the fl interpretor (`.../VossII/bin/fl`). It should open a new window with the fl interpretor.
 

@@ -142,7 +142,7 @@ docker-build: bifrost-clean-exe ## Build the docker image
 
 docker-run: ## Run the docker image (requires building first)
 	echo "$(color_yellow)Running docker image$(color_reset)"
-	$(DOCKER) run --rm -it -e DISPLAY=${DISPLAY} -v /tmp/.X11-unix:/tmp/.X11-unix $(DOCKER_IMG_NAME) /bin/bash
+	$(DOCKER) run --rm -it -e DISPLAY -v "$(HOME)/.Xauthority:/home/user/.Xauthority" -v /tmp/.X11-unix:/tmp/.X11-unix $(DOCKER_IMG_NAME) /bin/bash
 
 docker-zip: ## Zip the docker image for export
 	echo "$(color_yellow)Zipping docker image to $(DOCKER_ZIP_NAME)$(color_reset)"

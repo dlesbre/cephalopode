@@ -3,7 +3,7 @@
 (update_vossrc "PRINT-TIME-MOD" "100") fseq ();
 
 length ARGS == 2 => () |
-    error "Usage: fl -noX -f benchmark.fl <rom_file> <maxcycles>"
+    error "Usage: fl -f benchmark.fl <rom_file> <maxcycles>"
 ;
 
 load (DIR^"core_cephalopode.fl");
@@ -12,6 +12,7 @@ let ckt = pexlif2fsm p;
 wtime (ckt fseq 2);
 
 let BENCHMARK = el 1 ARGS;
+printf "Running : %s\n" BENCHMARK;
 let CYCLES = sscanf "%d" (el 2 ARGS);
 
 let ant =
@@ -43,5 +44,3 @@ val (end_phase,He,Le) = hd (lastn 2 (get_trace ste "evaluation_done"));
 |
     error "Did not complete"
 ;
-
-quit;

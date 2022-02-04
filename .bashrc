@@ -116,5 +116,5 @@ if ! shopt -oq posix; then
 fi
 
 export USER=user
-export DISPLAY=:0
+export XAUTHORITY=~/.Xauthority
 export PATH="/home/user/VossII/bin:/home/user/src/bifrost:$PATH"

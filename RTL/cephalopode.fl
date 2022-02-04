@@ -12,28 +12,28 @@ wtime vis;
 
 let N = 10000;
 
-let ant = 
+let ant =
     (make_CR_ant ckt [("i_ram_latency", RAM_LATENCY),
 		      ("ram_latency", RAM_LATENCY),
 		      ("i_rom_latency", ROM_LATENCY)] (N cycles))
   and
     "cr[2:0]" is 0 for N cycles
   and
-    mk_ROM_ant ckt "flash" "../compile/_benchmark1.rom"
-//    mk_ROM_ant ckt "flash" "../compile/_benchmark4.rom"
-//    mk_ROM_ant ckt "flash" "../compile/_e2.rom"
-//    mk_ROM_ant ckt "flash" "../compile/_benchmark.rom"
-//    mk_ROM_ant ckt "flash" "../compile/_sel_ex.rom"
-//    mk_ROM_ant ckt "flash" "../compile/_big_fac.rom"
-//    mk_ROM_ant ckt "flash" "../compile/_fac_example.rom"
-//    mk_ROM_ant ckt "flash" "../compile/_paper_expr2.rom"
+    mk_ROM_ant ckt "flash" (DIR^"../compile/_benchmark1.rom")
+//    mk_ROM_ant ckt "flash" (DIR^"../compile/_benchmark4.rom")
+//    mk_ROM_ant ckt "flash" (DIR^"../compile/_e2.rom")
+//    mk_ROM_ant ckt "flash" (DIR^"../compile/_benchmark.rom")
+//    mk_ROM_ant ckt "flash" (DIR^"../compile/_sel_ex.rom")
+//    mk_ROM_ant ckt "flash" (DIR^"../compile/_big_fac.rom")
+//    mk_ROM_ant ckt "flash" (DIR^"../compile/_fac_example.rom")
+//    mk_ROM_ant ckt "flash" (DIR^"../compile/_paper_expr2.rom")
   and
     "clk" is_clock N
   and
     "reset" is 1 for 1 cycle otherwise 0 until N cycles
-;  
+;
 
-let trl = 
+let trl =
     // RAM content
     let lines = 2**ADDR_SZ in
     let width = hw_size {'0::node} in
@@ -253,7 +253,7 @@ let start_RAM_observer vis root_addr =
 //load "zzzz.fl";
 
 // ========================================================================
-// A debugging session 
+// A debugging session
 // ========================================================================
 //add_waveform vis ["clk"];
 add_waveform vis ["i1/i2/i1/i1/state[5:0]"];
