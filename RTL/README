@@ -1,6 +1,6 @@
 To run the simulation of the various benchmarks do:
 
-			 filename     max cycles to simulate
+                         filename     max cycles to simulate
                          vvvvvvvv       vvvv
 fl -noX -f benchmark.fl _benchmark1.rom  10000
 fl -noX -f benchmark.fl _benchmark2.rom  10000
@@ -13,7 +13,6 @@ Results:     HW cycles
 -------------------------
 benchmark1:  9133 cycles
 benchmark2:  9312 cycles
-benchmark3:  7380 cycles 
+benchmark3:  7380 cycles
 benchmark4: 12078 cycles
-benchmark5:  1791 cycles
-
+benchmark5:  1701 cycles
