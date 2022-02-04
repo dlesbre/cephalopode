@@ -52,8 +52,8 @@ The docker image is called "processor". It is meant to be executed in interactiv
 	```
 	sudo docker run --rm -it -e DISPLAY=:0 \
 	     -v /tmp/.X11-unix:/tmp/.X11-unix \
-			 -v "$(HOME)/.Xauthority:/home/user/.Xauthority" \
-			 processor /bin/bash
+	     -v "$(HOME)/.Xauthority:/home/user/.Xauthority" \
+	     processor /bin/bash
 	```
 	It can be run without the X-server with (but fl will not work then):
 	```
